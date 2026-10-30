@@ -3,7 +3,7 @@
 import { CalendarDaysIcon, InboxIcon, LayoutListIcon, UsersIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { supabaseBrowser } from "@/lib/supabase/client";
 
@@ -14,7 +14,7 @@ const NAV = [
   { href: "/dashboard/patients", label: "Patients", icon: UsersIcon },
 ];
 
-export function Nav({ needsStaff }: { needsStaff: number }) {
+export function Nav({ inboxBadge }: { inboxBadge?: ReactNode }) {
   const path = usePathname();
   return (
     <nav aria-label="Dashboard" className="-mx-1 flex gap-1 overflow-x-auto px-1 [scrollbar-width:none] md:flex-col">
@@ -32,9 +32,7 @@ export function Nav({ needsStaff }: { needsStaff: number }) {
           >
             <Icon className="size-4" />
             {label}
-            {href === "/dashboard/inbox" && needsStaff > 0 && (
-              <span className="ms-auto rounded-full bg-alert px-1.5 font-mono text-[11px] tabular-nums text-white">{needsStaff}</span>
-            )}
+            {href === "/dashboard/inbox" && inboxBadge}
           </Link>
         );
       })}
@@ -42,7 +40,7 @@ export function Nav({ needsStaff }: { needsStaff: number }) {
   );
 }
 
-// Re-renders the page when this clinic's chats, visits or pauses change. RLS limits what Realtime sends.
+// Re-renders the page when this clinic's chats or visits change (staff pauses refresh on their own; a bot handoff always logs a message). RLS limits what Realtime sends.
 export function Live({ clinicId }: { clinicId: string }) {
   const router = useRouter();
   useEffect(() => {
@@ -50,13 +48,12 @@ export function Live({ clinicId }: { clinicId: string }) {
     let t: ReturnType<typeof setTimeout> | undefined;
     const soon = () => {
       clearTimeout(t);
-      t = setTimeout(() => router.refresh(), 300);
+      t = setTimeout(() => router.refresh(), 1000);
     };
     const channel = sb
       .channel(`desk-${clinicId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "messages", filter: `clinic_id=eq.${clinicId}` }, soon)
       .on("postgres_changes", { event: "*", schema: "public", table: "appointments", filter: `clinic_id=eq.${clinicId}` }, soon)
-      .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, soon)
       .subscribe();
     return () => {
       clearTimeout(t);

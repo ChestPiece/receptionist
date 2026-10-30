@@ -11,6 +11,7 @@ export const metadata = { title: "Inbox" };
 
 type Msg = { id: number; patient_id: string; channel: "whatsapp" | "web"; role: "patient" | "assistant" | "staff" | "system"; body: string; created_at: string };
 type Person = { id: string; name: string | null; phone: string | null; wa_id: string | null };
+type Row = { patient_id: string; name: string | null; phone: string | null; wa_id: string | null; channel: Msg["channel"]; role: Msg["role"]; body: string; created_at: string; last_id: number; bot_paused: boolean | null; updated_at: string | null };
 const SPEAKER = { patient: "Patient", assistant: "Sara", staff: "Staff", system: "Note" } as const;
 
 export default async function Inbox({ searchParams }: PageProps<"/dashboard/inbox">) {
@@ -18,22 +19,18 @@ export default async function Inbox({ searchParams }: PageProps<"/dashboard/inbo
   if (!clinic) return null;
   const { p, f } = (await searchParams) as { p?: string; f?: string };
 
-  // ponytail: the list is built from the newest 500 transcript lines; move to a "last message per patient" view when clinics outgrow it.
-  const { data: recent } = await sb.from("messages").select("id, patient_id, channel, role, body, created_at").eq("clinic_id", clinic.id).order("id", { ascending: false }).limit(500);
-  const latest = new Map<string, Msg>();
-  for (const m of (recent ?? []) as Msg[]) if (!latest.has(m.patient_id)) latest.set(m.patient_id, m);
+  const threadOf = (id: string) => sb.from("messages").select("id, patient_id, channel, role, body, created_at").eq("patient_id", id).order("id", { ascending: false }).limit(200);
+  // One row per patient, newest first (inbox_list, RLS applies). When a chat is picked, its thread loads alongside.
+  const [{ data: rows }, picked] = await Promise.all([sb.rpc("inbox_list", { clinic: clinic.id }), p ? threadOf(p) : null]);
+  const all = (rows ?? []) as Row[];
+  const latest = new Map(all.map((r) => [r.patient_id, r]));
+  const person = new Map<string, Person>(all.map((r) => [r.patient_id, { id: r.patient_id, name: r.name, phone: r.phone, wa_id: r.wa_id }]));
+  const waiting = new Set(all.filter((r) => stillPaused(r.updated_at ? { bot_paused: !!r.bot_paused, updated_at: r.updated_at } : null)).map((r) => r.patient_id));
   const ids = [...latest.keys()];
-
-  const [{ data: people }, { data: convos }] = await Promise.all([
-    sb.from("patients").select("id, name, phone, wa_id").in("id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]),
-    sb.from("conversations").select("patient_id, bot_paused, updated_at").in("patient_id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]),
-  ]);
-  const person = new Map(((people ?? []) as Person[]).map((x) => [x.id, x]));
-  const waiting = new Set((convos ?? []).filter((c) => stillPaused(c)).map((c) => c.patient_id as string));
   const list = ids.filter((id) => f !== "staff" || waiting.has(id));
   const open = p && person.has(p) ? p : list[0];
 
-  const { data: thread } = open ? await sb.from("messages").select("id, patient_id, channel, role, body, created_at").eq("patient_id", open).order("id", { ascending: false }).limit(200) : { data: null };
+  const { data: thread } = open === p && picked ? picked : open ? await threadOf(open) : { data: null };
   const lines = ((thread ?? []) as Msg[]).reverse();
   const current = open ? person.get(open) : undefined;
   const isPaused = open ? waiting.has(open) : false;
