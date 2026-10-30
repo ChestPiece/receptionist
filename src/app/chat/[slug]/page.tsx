@@ -1,12 +1,14 @@
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { Suspense, type CSSProperties } from "react";
+import { cache, Suspense, type CSSProperties } from "react";
 import { clinicBySlug, personaName } from "@/lib/clinics";
 import { Chat } from "./chat";
 
+const getClinic = cache(clinicBySlug); // one lookup per request, shared by metadata and page
+
 export async function generateMetadata({ params }: PageProps<"/chat/[slug]">) {
   await connection(); // clinic lookup reads the clock (5-min cache), so render at request time
-  const clinic = await clinicBySlug((await params).slug);
+  const clinic = await getClinic((await params).slug);
   return { title: clinic ? `Chat with ${clinic.name}` : "Chat" };
 }
 
@@ -15,7 +17,7 @@ const HEX = /^#[0-9a-f]{6}$/i; // clinic accent goes into inline CSS, so only pl
 async function ClinicChat({ params }: { params: PageProps<"/chat/[slug]">["params"] }) {
   await connection();
   const { slug } = await params;
-  const clinic = await clinicBySlug(slug);
+  const clinic = await getClinic(slug);
   if (!clinic?.active) notFound();
   const { accent, logo } = clinic.branding;
   const style = accent && HEX.test(accent) ? ({ "--primary": accent, "--ring": `${accent}8c` } as CSSProperties) : undefined;

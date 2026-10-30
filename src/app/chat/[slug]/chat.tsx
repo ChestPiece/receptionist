@@ -241,26 +241,25 @@ type ChatProps = {
   info: Info;
 };
 
-// After a reload, bring back the visitor's earlier messages (text only), then start the chat with them.
+// Render at once; the visitor's earlier messages (text only) are fetched in the background and slotted in when they land.
 export function Chat(props: ChatProps) {
   const [id] = useState(visitorId);
-  const [initial, setInitial] = useState<UIMessage[] | null>(null);
+  const [history, setHistory] = useState<UIMessage[]>([]);
   useEffect(() => {
     fetch(`/api/chat?slug=${encodeURIComponent(props.slug)}&visitorId=${id}`)
       .then((r) => (r.ok ? r.json() : []))
       .catch(() => [])
-      .then(setInitial);
+      .then(setHistory);
   }, [props.slug, id]);
-  return initial ? <ChatView {...props} id={id} initial={initial} /> : null;
+  return <ChatView {...props} id={id} history={history} />;
 }
 
-function ChatView({ slug, clinicName, persona, phone, logo, info, id, initial }: ChatProps & { id: string; initial: UIMessage[] }) {
+function ChatView({ slug, clinicName, persona, phone, logo, info, id, history }: ChatProps & { id: string; history: UIMessage[] }) {
   const sample = /\(sample data\)/i.test(clinicName);
   const name = clinicName.replace(/\s*\(sample data\)/i, "");
-  const [greeted, setGreeted] = useState(initial.length > 0);
+  const [greeted, setGreeted] = useState(false);
   const reduce = useReducedMotion();
-  const { messages, sendMessage, regenerate, error, clearError, status, stop } = useChat({
-    messages: initial,
+  const { messages, setMessages, sendMessage, regenerate, error, clearError, status, stop } = useChat({
     transport: new DefaultChatTransport({
       api: "/api/chat",
       prepareSendMessagesRequest: ({ messages }) => ({
@@ -268,6 +267,12 @@ function ChatView({ slug, clinicName, persona, phone, logo, info, id, initial }:
       }),
     }),
   });
+  // History lands late: apply it only if the visitor has not typed yet.
+  useEffect(() => {
+    if (history.length && messages.length === 0 && status === "ready") {
+      setMessages(history);
+    }
+  }, [history, messages.length, status, setMessages]);
   const busy = status === "submitted" || status === "streaming";
   const send = (text: string) => !busy && text.trim() && sendMessage({ text });
 
@@ -330,7 +335,7 @@ function ChatView({ slug, clinicName, persona, phone, logo, info, id, initial }:
         <Conversation className="flex-1">
           <ConversationContent className="mx-auto w-full max-w-3xl gap-6 px-4 py-8">
             <AnimatePresence mode="wait" initial={false}>
-              {greeted ? (
+              {greeted || !empty ? (
                 <Enter key="greeting">
                   {empty ? (
                     <div className="flex flex-col items-center pt-[clamp(1.5rem,16svh,9rem)] text-center">
