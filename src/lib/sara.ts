@@ -107,14 +107,17 @@ const book = tool({
     const { clinic, patientId, patientName, patientPhone, waId } = rc!.context;
     // A web visitor is anonymous: the clinic needs a number to reach them.
     if (!waId && !patientPhone && !patient_phone) return "Ask for the patient's mobile number first, then call book again with patient_phone.";
-    if ((await upcoming(rc!.context)).length >= MAX_UPCOMING)
+    const [list, slot, { data: convo }] = await Promise.all([
+      upcoming(rc!.context),
+      checkSlot(clinic, service, date, time),
+      db().from("conversations").select("followup_sent_at").eq("patient_id", patientId).maybeSingle(),
+    ]);
+    if (list.length >= MAX_UPCOMING)
       return `This patient already has ${MAX_UPCOMING} upcoming visits, the most allowed. Offer to move or cancel one, or call the clinic.`;
-    const slot = await checkSlot(clinic, service, date, time);
     if (typeof slot === "string") return slot;
     // Keep the name on file: a later booking "for my son" must not rename the account holder.
-    if (patient_name && !patientName) await db().from("patients").update({ name: patient_name }).eq("id", patientId);
-    if (patient_phone && !patientPhone) await db().from("patients").update({ phone: patient_phone }).eq("id", patientId);
-    const { data: convo } = await db().from("conversations").select("followup_sent_at").eq("patient_id", patientId).maybeSingle();
+    const fill = { ...(patient_name && !patientName ? { name: patient_name } : {}), ...(patient_phone && !patientPhone ? { phone: patient_phone } : {}) };
+    if (Object.keys(fill).length) await db().from("patients").update(fill).eq("id", patientId);
     const { data, error } = await db()
       .from("appointments")
       .insert({ clinic_id: clinic.id, patient_id: patientId, service: slot.service.name, starts_at: slot.starts_at, ends_at: slot.ends_at, source: bookingSource(convo?.followup_sent_at ?? null, new Date()) })

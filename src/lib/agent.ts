@@ -124,12 +124,15 @@ export async function handleMessage(clinic: Clinic, msg: IncomingMessage) {
   if (dup) throw dup;
 
   // Flood guard: one "slow down" reply, then silence until the window passes. Emergencies still get the fixed reply.
-  const { count, error: rateError } = await sb
-    .from("processed_messages")
-    .select("id", { count: "exact", head: true })
-    .eq("clinic_id", clinic.id)
-    .eq("patient_wa", msg.from)
-    .gt("created_at", new Date(Date.now() - RATE_WINDOW_MS).toISOString());
+  const [{ count, error: rateError }, { data: patient, error: patientError }] = await Promise.all([
+    sb
+      .from("processed_messages")
+      .select("id", { count: "exact", head: true })
+      .eq("clinic_id", clinic.id)
+      .eq("patient_wa", msg.from)
+      .gt("created_at", new Date(Date.now() - RATE_WINDOW_MS).toISOString()),
+    sb.from("patients").upsert({ clinic_id: clinic.id, wa_id: msg.from }, { onConflict: "clinic_id,wa_id" }).select("id, name").single(),
+  ]);
   if (rateError) throw rateError;
   if ((count ?? 0) > RATE_MAX) {
     console.log("[rate] limited");
@@ -138,12 +141,6 @@ export async function handleMessage(clinic: Clinic, msg: IncomingMessage) {
     return;
   }
   markRead(wa, msg.from).catch((e) => console.error("[read]", e.message));
-
-  const { data: patient, error: patientError } = await sb
-    .from("patients")
-    .upsert({ clinic_id: clinic.id, wa_id: msg.from }, { onConflict: "clinic_id,wa_id" })
-    .select("id, name")
-    .single();
   if (patientError) throw patientError;
 
   let ids = [msg.id];
@@ -184,23 +181,25 @@ export async function handleMessage(clinic: Clinic, msg: IncomingMessage) {
     const { error: bodyError } = await sb.from("processed_messages").update({ body: own }).eq("id", msg.id);
     if (bodyError) throw bodyError;
     await new Promise((r) => setTimeout(r, DEBOUNCE_MS));
-    if ((await newestPiece(clinic.id, msg.from)) !== msg.id) return; // a newer piece arrived; that call answers all of them
-
-    const { data: pieces, error: piecesError } = await sb
-      .from("processed_messages")
-      .select("id, body")
-      .eq("clinic_id", clinic.id)
-      .eq("patient_wa", msg.from)
-      .eq("answered", false)
-      .not("body", "is", null)
-      .gt("created_at", new Date(Date.now() - PIECE_MAX_AGE_MS).toISOString())
-      .order("seq");
+    const [newest, { data: pieces, error: piecesError }, { convo, history: saved }] = await Promise.all([
+      newestPiece(clinic.id, msg.from),
+      sb
+        .from("processed_messages")
+        .select("id, body")
+        .eq("clinic_id", clinic.id)
+        .eq("patient_wa", msg.from)
+        .eq("answered", false)
+        .not("body", "is", null)
+        .gt("created_at", new Date(Date.now() - PIECE_MAX_AGE_MS).toISOString())
+        .order("seq"),
+      loadHistory(),
+    ]);
+    if (newest !== msg.id) return; // a newer piece arrived; that call answers all of them
     if (piecesError) throw piecesError;
     if (!pieces.length) return; // another call already answered them
     ids = pieces.map((p) => p.id as string);
     const text = pieces.map((p) => p.body as string).join("\n");
 
-    const { convo, history: saved } = await loadHistory();
     if (stillPaused(convo)) {
       // Staff have this chat. Keep the messages (updated_at untouched, so the pause timer runs on) for context when it lapses.
       await sb.from("conversations").update({ history: trimHistory([...saved, user(text)]) }).eq("patient_id", patient.id);
@@ -208,24 +207,32 @@ export async function handleMessage(clinic: Clinic, msg: IncomingMessage) {
       await logMessages(clinic.id, patient.id, "whatsapp", [{ role: "patient", body: text }]);
       return;
     }
-    if (convo?.bot_paused) await sb.from("conversations").update({ bot_paused: false }).eq("patient_id", patient.id); // pause lapsed
     const t1 = Date.now();
-    const result = await runSara(clinic, patient, msg.from, [...saved, user(text)]);
+    const [result] = await Promise.all([
+      runSara(clinic, patient, msg.from, [...saved, user(text)]),
+      convo?.bot_paused && sb.from("conversations").update({ bot_paused: false }).eq("patient_id", patient.id), // pause lapsed
+    ]);
     const t2 = Date.now();
     // A newer piece arrived while the model ran. Its call answers all pieces, so drop this reply, unless this run changed data.
     // ponytail: a data-writing run and the newer run can both answer the same pieces; a per-patient lock fixes that if it shows up.
-    await logUsage(clinic.id, "whatsapp", result.state.usage);
-    if ((await newestPiece(clinic.id, msg.from)) !== msg.id && !wroteData(result.newItems)) return;
-    await answered();
+    const [, latestPiece] = await Promise.all([logUsage(clinic.id, "whatsapp", result.state.usage), newestPiece(clinic.id, msg.from)]);
+    if (latestPiece !== msg.id && !wroteData(result.newItems)) return;
     const reply = result.finalOutput ? tidy(result.finalOutput) : null;
-    if (reply) await send(reply);
-    await logMessages(clinic.id, patient.id, "whatsapp", [{ role: "patient", body: text }, ...(reply ? [{ role: "assistant" as const, body: reply }] : [])]);
+    await Promise.all([answered(), reply && send(reply)]);
     console.log(`[timing] prep=${t1 - t0}ms agent=${t2 - t1}ms send=${Date.now() - t2}ms`);
-    const { history: latest } = await loadHistory();
-    const { error } = await sb
-      .from("conversations")
-      .upsert({ patient_id: patient.id, history: trimHistory(mergeHistory(latest, saved.length, result.history)), updated_at: new Date().toISOString() });
-    if (error) console.error("[history]", error.message); // reply already sent; don't send an error on top
+    // Reply is already out: log failures, don't send an error on top.
+    await Promise.all([
+      logMessages(clinic.id, patient.id, "whatsapp", [{ role: "patient", body: text }, ...(reply ? [{ role: "assistant" as const, body: reply }] : [])]).catch((e) =>
+        console.error("[log]", (e as Error).message),
+      ),
+      (async () => {
+        const { history: latest } = await loadHistory();
+        const { error } = await sb
+          .from("conversations")
+          .upsert({ patient_id: patient.id, history: trimHistory(mergeHistory(latest, saved.length, result.history)), updated_at: new Date().toISOString() });
+        if (error) throw error;
+      })().catch((e) => console.error("[history]", (e as Error).message)),
+    ]);
   } catch (e) {
     console.error("[agent]", (e as Error).message);
     await answered(); // don't replay failed pieces into the next message
