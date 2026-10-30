@@ -5,7 +5,6 @@ import { ThemeToggle } from "@/components/ledger";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 
-// ponytail: "Front Desk" is a placeholder name until the product name is decided (P3).
 const DEMO = "/chat/sample-smile";
 
 const SAFETY = [

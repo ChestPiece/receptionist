@@ -155,7 +155,7 @@ type SideProps = {
 function SidebarBody({ name, sample, logo, persona, info, phone }: SideProps) {
   return (
     <div className="flex h-full flex-col">
-      <Link href="/" className="px-5 pt-4 pb-1" aria-label="Front Desk home">
+      <Link href="/" className="px-5 pt-4 pb-1" aria-label="Receptionist Agent home">
         <Logo className="text-xl" />
       </Link>
       <div className="flex flex-col gap-1 p-3">

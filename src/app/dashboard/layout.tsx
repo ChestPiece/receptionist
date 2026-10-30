@@ -8,7 +8,7 @@ import { Live, Nav } from "./shell";
 
 // Dashboard is per-user (auth cookies), so it renders on request instead of prerendering.
 export const instant = false;
-export const metadata: Metadata = { title: { default: "Front Desk", template: "%s · Front Desk" } };
+export const metadata: Metadata = { title: { default: "Receptionist Agent", template: "%s · Receptionist Agent" } };
 
 export default async function DashboardLayout({ children }: LayoutProps<"/dashboard">) {
   const { sb, clinics, clinic, email } = await desk();

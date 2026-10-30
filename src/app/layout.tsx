@@ -12,6 +12,7 @@ const geist = Geist({
 const readex = Readex_Pro({
   variable: "--font-readex",
   subsets: ["arabic"],
+  preload: false,
   weight: ["400", "500", "600"],
 });
 
@@ -20,7 +21,7 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-// Newsreader is only for the "Front Desk." wordmark (the .wordmark utility), never for UI text.
+// Newsreader is only for the "Receptionist Agent." wordmark (the .wordmark utility), never for UI text.
 const newsreader = Newsreader({
   variable: "--font-newsreader",
   subsets: ["latin"],
@@ -28,7 +29,7 @@ const newsreader = Newsreader({
 });
 
 export const metadata: Metadata = {
-  title: "Front Desk",
+  title: "Receptionist Agent",
   description: "AI receptionist for dental clinics: WhatsApp and website chat.",
 };
 

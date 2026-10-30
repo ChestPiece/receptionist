@@ -41,7 +41,7 @@ export function Nav({ demo }: { demo: string }) {
   return (
     <header className="sticky top-0 z-30 px-4 pt-3 sm:px-6">
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between rounded-2xl border bg-card/80 ps-4 pe-2 shadow-sm backdrop-blur-md">
-        <Link href="/" aria-label="Front Desk home">
+        <Link href="/" aria-label="Receptionist Agent home">
           <Logo />
         </Link>
         <nav className="flex items-center gap-1 text-sm">

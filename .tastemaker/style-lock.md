@@ -1,4 +1,4 @@
-# Style lock: Front Desk, clean SaaS
+# Style lock: Receptionist Agent, clean SaaS
 
 Locked 2026-10-25 (supersedes "The Ledger"). Applies to every surface: landing, patient chat, dashboard, login. Change only when Anas asks.
 
@@ -7,7 +7,7 @@ Locked 2026-10-25 (supersedes "The Ledger"). Applies to every surface: landing, 
 - Light and dark. System default plus a toggle (next-themes, `.dark` class).
 
 ## Logo
-- The logo is the wordmark `Front Desk.`: Newsreader 400, tracking -0.02em, ink colour, with the full stop in `--alert` red.
+- The logo is the wordmark `Receptionist Agent.`: Newsreader 400, tracking -0.02em, ink colour, with the full stop in `--alert` red.
 - Use `<Logo />` from `src/components/logo.tsx` (it applies the `.wordmark` utility). Never retype it by hand.
 - No icon mark, no box behind it, no other colour. Size it with a text class only (`text-2xl` header, `text-xl` footer, sidebar, dashboard).
 - Newsreader is for the wordmark only. Never use it for headings or UI text.
