@@ -181,7 +181,7 @@ export async function handleMessage(clinic: Clinic, msg: IncomingMessage) {
     const { error: bodyError } = await sb.from("processed_messages").update({ body: own }).eq("id", msg.id);
     if (bodyError) throw bodyError;
     await new Promise((r) => setTimeout(r, DEBOUNCE_MS));
-    const [newest, { data: pieces, error: piecesError }, { convo, history: saved }] = await Promise.all([
+    const [newest, { data: pieces, error: piecesError }, loaded] = await Promise.all([
       newestPiece(clinic.id, msg.from),
       sb
         .from("processed_messages")
@@ -192,9 +192,11 @@ export async function handleMessage(clinic: Clinic, msg: IncomingMessage) {
         .not("body", "is", null)
         .gt("created_at", new Date(Date.now() - PIECE_MAX_AGE_MS).toISOString())
         .order("seq"),
-      loadHistory(),
+      loadHistory().catch((e: Error) => e), // only the newest piece may surface this error
     ]);
     if (newest !== msg.id) return; // a newer piece arrived; that call answers all of them
+    if (loaded instanceof Error) throw loaded;
+    const { convo, history: saved } = loaded;
     if (piecesError) throw piecesError;
     if (!pieces.length) return; // another call already answered them
     ids = pieces.map((p) => p.id as string);
