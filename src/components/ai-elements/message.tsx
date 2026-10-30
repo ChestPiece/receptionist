@@ -1,5 +1,6 @@
 "use client";
 
+import { renderText } from "./render-text";
 import { Button } from "@/components/ui/button";
 import {
   ButtonGroup,
@@ -24,7 +25,6 @@ import {
   useMemo,
   useState,
 } from "react";
-import { Streamdown } from "streamdown";
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
   from: UIMessage["role"];
@@ -315,21 +315,15 @@ export const MessageBranchPage = ({
   );
 };
 
-export type MessageResponseProps = ComponentProps<typeof Streamdown>;
+export type MessageResponseProps = Omit<ComponentProps<"div">, "children"> & { children?: string };
 
 export const MessageResponse = memo(
-  ({ className, ...props }: MessageResponseProps) => (
-    <Streamdown
-      className={cn(
-        "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
-        className
-      )}
-      {...props}
-    />
+  ({ className, children = "", ...props }: MessageResponseProps) => (
+    <div className={cn("size-full whitespace-pre-wrap", className)} {...props}>
+      {renderText(children)}
+    </div>
   ),
-  (prevProps, nextProps) =>
-    prevProps.children === nextProps.children &&
-    nextProps.isAnimating === prevProps.isAnimating
+  (prevProps, nextProps) => prevProps.children === nextProps.children
 );
 
 MessageResponse.displayName = "MessageResponse";
