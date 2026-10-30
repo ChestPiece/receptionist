@@ -26,4 +26,11 @@
     (select count(*) from clinics where id = '<CLINIC_B>') as own_clinic;
 
   -- own_clinic should be 1; everything else 0.
+
+  -- inbox_list (0006_speed.sql) is security invoker: a member of one clinic reading another clinic's inbox gets 0 rows.
+  set local request.jwt.claims = '{"sub":"<USER_A>","role":"authenticated"}';
+  select 'A' as as_user, (select count(*) from inbox_list('<CLINIC_B>')) as other_clinic_inbox;
+  set local request.jwt.claims = '{"sub":"<USER_B>","role":"authenticated"}';
+  select 'B' as as_user, (select count(*) from inbox_list('<CLINIC_A>')) as other_clinic_inbox;
+  -- other_clinic_inbox should be 0 for both.
   rollback;
