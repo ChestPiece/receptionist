@@ -1,11 +1,46 @@
 [
   {
+    "date": "2026-10-30",
+    "surface": "landing / (design mockup)",
+    "mood": "warm-calm health, cinematic night",
+    "macrostructure": "night split-hero + scroll-scrubbed bridge + pinned narrative workflow + hairline features + safety list + night close band",
+    "archetypes": {
+      "nav": "floating pill, night variant over night surfaces",
+      "hero": "split on night: copy left, live replay as lit screen right, PatternWaves silk + glow horizon",
+      "bridge": "full-bleed frame sequence, live captions, bg night to morning",
+      "feature": "hairline 3-up with live mini demos (kept)",
+      "proof": "safety list, icon tiles dropped",
+      "cta": "full-bleed night band, centred",
+      "footer": "on night, one line"
+    },
+    "arc": [
+      "hook: closed for the night, still taking bookings",
+      "bridge: 2:14 am to 9:00 am",
+      "how it works: one booking into the calendar",
+      "features",
+      "trust: safety in code",
+      "close: let Sara take the night shift"
+    ]
+  },
+  {
     "date": "2026-10-25",
     "surface": "landing /",
     "mood": "warm (health, premium-calm)",
     "macrostructure": "split-studio hero + narrative workflow + ruled ledger + dark close band",
-    "archetypes": { "nav": "wordmark + one text link", "hero": "split, serif headline with italic clay phrase, scripted chat replay right", "feature": "timestamped timeline rows (time | bubble | caption)", "proof": "safety ledger dl rows", "cta": "full-bleed ink band", "footer": "one line, sample-data note" },
-    "arc": ["hook: answered even at 2 a.m.", "how it works: one patient's booking timeline", "trust: safety in code", "close: take the night shift"]
+    "archetypes": {
+      "nav": "wordmark + one text link",
+      "hero": "split, serif headline with italic clay phrase, scripted chat replay right",
+      "feature": "timestamped timeline rows (time | bubble | caption)",
+      "proof": "safety ledger dl rows",
+      "cta": "full-bleed ink band",
+      "footer": "one line, sample-data note"
+    },
+    "arc": [
+      "hook: answered even at 2 a.m.",
+      "how it works: one patient's booking timeline",
+      "trust: safety in code",
+      "close: take the night shift"
+    ]
   },
   {
     "date": "2026-10-25",
