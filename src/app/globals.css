@@ -17,6 +17,9 @@
     --color-success: var(--success);
     --color-success-foreground: var(--success-foreground);
     --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+    --font-display: var(--font-newsreader), Georgia, serif; /* landing H1/H2 and film captions only (style-lock amendment 2026-11-01) */
+    --color-dawn: var(--dawn);
+    --color-dawn-deep: var(--dawn-deep);
     --color-panel: var(--panel);
     --color-sand: var(--sand);
     --color-sidebar-ring: var(--sidebar-ring);
@@ -59,8 +62,8 @@
     --radius-4xl: calc(var(--radius) * 2.6);
 
     /* Fluid scale: 360px to 1440px viewports. text-display, text-h2, py-section. */
-    --text-display: clamp(2.125rem, 1.4rem + 2.6vw, 3.5rem); /* each hero sentence fits one line from 375 px up */
-    --text-display--line-height: 1.02;
+    --text-display: clamp(2.5rem, 1.6rem + 3vw, 4.25rem); /* each hero sentence fits one line from 375 px up */
+    --text-display--line-height: 1.04;
     --text-h2: clamp(1.875rem, 1.5rem + 1.6vw, 2.875rem);
     --text-h2--line-height: 1.08;
     --text-lead: clamp(1.0625rem, 1rem + 0.3vw, 1.25rem);
@@ -121,6 +124,10 @@
     --night-accent: #93b59d;
     --night-border: #2c3832;
     --night-alert: #e8825f;
+
+    /* Dawn: morning light on the landing only. --dawn is light (fills, glows), --dawn-deep is its text-safe partner on day surfaces. */
+    --dawn: #e9c9a8;
+    --dawn-deep: #8a5a2e;
 
     /* Motion tokens */
     --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -255,6 +262,42 @@
   color: var(--foreground);
 }
 
+/* Day scope: the landing body is morning in both themes (the story owns the colours, not the toggle). Light :root values. */
+.day {
+  --background: #fafaf9;
+  --foreground: #0c0a09;
+  --card: #ffffff;
+  --card-foreground: #0c0a09;
+  --popover: #ffffff;
+  --popover-foreground: #0c0a09;
+  --primary: #4f6f5c;
+  --primary-foreground: #ffffff;
+  --secondary: #f5f5f4;
+  --secondary-foreground: #0c0a09;
+  --muted: #f5f5f4;
+  --muted-foreground: #6b6560;
+  --accent: #eef3ef;
+  --accent-foreground: #3e5a49;
+  --alert: #ad4320;
+  --alert-soft: #f4dccf;
+  --sage-soft: #dfe8df;
+  --web: #33506e;
+  --web-soft: #dbe3eb;
+  --success: #4f6f5c;
+  --success-foreground: #ffffff;
+  --border: #e7e5e4;
+  --rule: #f0eeec;
+  --input: #e7e5e4;
+  --ring: color-mix(in oklab, #4f6f5c 55%, transparent);
+  --panel: #f5f5f4;
+  --sand: #e9c9a8;
+  --shadow-slip: 0 1px 2px rgb(12 10 9 / 0.05);
+  --night: #0d1210;
+  background-color: var(--background);
+  color: var(--foreground);
+  color-scheme: light;
+}
+
 /* A lit phone screen on a night surface: light card tokens in both themes. */
 .screen {
   --background: #fafaf9;
@@ -275,26 +318,31 @@
 }
 }
 
-/* Glow horizon: a planet edge in CSS, night surfaces only. The planet body hides the waves below it; the rim carries the sage light. */
-.horizon { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
-.horizon-air { position: absolute; left: 50%; bottom: 0; width: 140%; height: 70%; translate: -50% 0;
-  background: radial-gradient(42% 46% at 50% calc(var(--horizon-y, 86%) / 0.7 - 30%), color-mix(in oklab, var(--night-accent) 30%, transparent), transparent 70%); }
-.horizon-planet, .horizon-rim { position: absolute; left: 50%; top: var(--horizon-y, 86%); width: 280vw; aspect-ratio: 1; translate: -50% 0; border-radius: 50%; }
-.horizon-planet { background: var(--night); }
-.horizon-rim {
-  box-shadow: 0 -1px 0 0 var(--night-foreground), 0 -1px 6px 1px var(--night-accent),
-    0 -8px 40px 2px color-mix(in oklab, var(--night-accent) 70%, transparent), 0 -40px 140px 10px color-mix(in oklab, var(--night-accent) 35%, transparent);
-  mask-image: linear-gradient(to right, transparent 36%, #000 47%, #000 53%, transparent 64%);
-}
+/* Hero entrance, CSS only so it plays from first paint (no wait for hydration). --d is the per-element delay. */
+@keyframes rise { from { transform: translateY(105%); } }
+@keyframes fade-up { from { opacity: 0; transform: translateY(14px); } }
+.rise { animation: rise 900ms cubic-bezier(0.16, 1, 0.3, 1) var(--d, 0ms) both; }
+.fade-up { animation: fade-up 600ms cubic-bezier(0.23, 1, 0.32, 1) var(--d, 0ms) both; }
 
-/* Night-to-morning bridge. --p is scroll progress (0 to 1), set by the frame sequence.
-   --q is the background ramp, in the last 10% only: the scrub ends as the section top reaches the viewport top, so the night
-   hero above has just left and never sits on a lightened bridge. --d dims the bright morning frames in the dark theme, earlier. */
-.bridge { --p: 0; --q: clamp(0, (var(--p) - 0.9) * 10, 1); --d: clamp(0, (var(--p) - 0.7) * 4, 1); background-color: color-mix(in oklab, var(--night) calc((1 - var(--q)) * 100%), var(--background)); }
-.bridge-frame { mask-image: linear-gradient(to bottom, transparent, #000 14%, #000 82%, transparent), linear-gradient(to right, transparent, #000 8%, #000 92%, transparent); mask-composite: intersect; }
-.bridge-c1 { color: var(--night-foreground); opacity: clamp(0, (0.62 - var(--p)) * 5, 1); }
-.bridge-c2 { opacity: clamp(0, (var(--p) - 0.88) * 9, 1); }
-.bridge-c1 small { color: var(--night-muted); }
-/* Dark theme: the morning frames are bright, so they dim as morning arrives and end close to the dark body, keeping the 9:00 caption readable. */
-.dark .bridge-frame canvas { filter: brightness(calc(1 - var(--d) * 0.8)); }
-@media (prefers-reduced-motion: reduce) { .bridge { --p: 1 !important; } }
+/* First light: a dawn glow and one hairline at the bottom of a night surface. No planet body: the light is the horizon.
+   [data-top] mirrors it to the top edge (the close band: the day leaving). */
+.horizon { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
+.horizon-air { position: absolute; inset: auto -20% 0; height: 55%;
+  background: radial-gradient(50% 100% at 50% 100%, color-mix(in oklab, var(--dawn) 26%, transparent), color-mix(in oklab, var(--night-accent) 8%, transparent) 55%, transparent 80%); }
+.horizon-line { position: absolute; inset-inline: 0; bottom: 0; height: 1px;
+  background: linear-gradient(to right, transparent 8%, color-mix(in oklab, var(--dawn) 70%, transparent) 50%, transparent 92%);
+  box-shadow: 0 0 24px 2px color-mix(in oklab, var(--dawn) 35%, transparent); }
+.horizon[data-top] { scale: 1 -1; }
+.horizon { animation: fade-up 1200ms cubic-bezier(0.16, 1, 0.3, 1) 300ms both; }
+
+/* Night film. --p is the scrub progress (0 to 1) from the frame sequence; each caption shows between its --a and --b. */
+.film { --p: 0; }
+.film-cap { --show: clamp(0, min((var(--p) - var(--a)) * 14, (var(--b) - var(--p)) * 14), 1);
+  opacity: var(--show); translate: 0 calc((1 - var(--show)) * 12px); }
+/* A scrim under the captions while it is night; it lifts as the shot reaches morning. */
+.film-scrim { background: linear-gradient(to top, color-mix(in oklab, var(--night) 70%, transparent), transparent 45%);
+  opacity: clamp(0, (0.72 - var(--p)) * 6, 1); }
+@media (prefers-reduced-motion: reduce) { .film { --p: 1 !important; } }
+
+/* The overnight booking on the week calendar: a soft dawn halo, the one highlight of the How it works section. */
+.booked-glow { box-shadow: 0 0 0 2px var(--background), 0 0 0 3px var(--dawn), 0 8px 24px -8px color-mix(in oklab, var(--dawn) 80%, transparent); }

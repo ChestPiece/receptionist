@@ -55,3 +55,11 @@ Paper/dot textures, torn edges, gradient blobs, glassmorphism beyond the navbar 
 - **One frame sequence per page**: the night-to-morning bridge. Scroll-scrubbed, not pinned. Frames carry no text; captions are live DOM.
 - **Lit screen**: the hero chat may use light card tokens and a sage halo shadow on night surfaces. This is the only shadow above `shadow-sm`.
 - **Still banned**: paper/dot textures (as static images or CSS), torn edges, free gradient blobs (the horizon air is the only radial, and only under a rim), glassmorphism beyond the navbar blur, gradient text, neon or any accent other than sage on night, emoji, icon-in-a-square logos and icon tiles, invented stats or client logos, a second pinned story, WebGL on light surfaces, text baked into frames.
+
+## Amendment 2026-11-01 (approved by Anas): the story owns the colours (landing only)
+- **Forced story colours on `/`**: the landing root is a `.day` scope (light tokens in both themes). Night stays `.night` (hero, film, close band, footer). No ThemeToggle on the landing; chat, login and dashboard keep it.
+- **Display serif**: Newsreader roman 400 (`font-display`, `text-display`), tracking -0.02em to -0.025em, for landing H1/H2, the film captions and step numbers only. Geist stays for UI, body, buttons and chat. No italics. Replaces "no serif headings" on the landing only.
+- **Dawn accent**: `--dawn` #e9c9a8 (light, on night or as fills) and `--dawn-deep` #8a5a2e (text on light, 5.6:1 on the day background). Used for morning light: the horizon line, step numbers, safety hairlines, the booked glow. Sage stays the action colour. Supersedes "sage only" for night horizons.
+- **Horizon**: a thin dawn line with a soft glow (no planet circle), mirrored on top of the close band.
+- **One pin = the night film** (`NightFilm`): a pinned, scroll-scrubbed frame sequence (about 350vh) with live DOM serif captions driven by `--p`. It replaces the bridge and the How it works pin. How it works, features (bento) and safety (editorial list) are scroll reveals only.
+- **Hero entrance is CSS** (`.rise` line masks, `.fade-up`), visible from first paint, no hydration wait.

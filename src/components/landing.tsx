@@ -11,6 +11,7 @@ import {
   useRef,
   useState,
   type ComponentType,
+  type CSSProperties,
   type ReactNode,
 } from "react";
 import {
@@ -26,7 +27,7 @@ import { Logo } from "@/components/logo";
 import type { FrameSequence as FrameSequenceType } from "@/components/frame-sequence";
 import type { PatternWavesProps } from "@/components/pattern-waves";
 import { Button } from "@/components/ui/button";
-import { Flip, gsap, ScrollTrigger, SplitText, useGSAP } from "@/lib/gsap";
+import { gsap, ScrollTrigger, useGSAP } from "@/lib/gsap";
 import { cn } from "@/lib/utils";
 
 // Sample data only: no real clinic or patient.
@@ -97,7 +98,7 @@ export function Nav({ demo }: { demo: string }) {
       )}
     >
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between rounded-2xl border bg-card/80 ps-4 pe-2 shadow-sm backdrop-blur-md transition-[background-color,border-color,color] duration-200 ease-out">
-        <Link href="/" aria-label="Receptionist Agent home">
+        <Link href="/" aria-label="Receptionist Agent home" className="shrink-0 whitespace-nowrap">
           <Logo />
         </Link>
         <nav className="flex items-center gap-1 text-sm">
@@ -109,7 +110,7 @@ export function Nav({ demo }: { demo: string }) {
               className={cn(
                 "hidden rounded-lg px-3 py-2 transition-colors hover:bg-muted hover:text-foreground md:inline",
                 active === href
-                  ? "bg-muted text-foreground"
+                  ? "text-foreground underline decoration-primary decoration-2 underline-offset-[6px]"
                   : "text-muted-foreground",
               )}
             >
@@ -122,7 +123,7 @@ export function Nav({ demo }: { demo: string }) {
           />
           <Link
             href="/login"
-            className="rounded-lg px-3 py-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className="rounded-lg px-2 py-2 whitespace-nowrap text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:px-3"
           >
             Sign in
           </Link>
@@ -143,43 +144,15 @@ export function Nav({ demo }: { demo: string }) {
   );
 }
 
-export function Hero({ demo }: { demo: string }) {
-  const root = useRef<HTMLDivElement>(null);
-  useGSAP(
-    () => {
-      // Server HTML ships hidden (a <noscript> rule unhides it) so the split headline never flashes.
-      gsap.set(root.current, { autoAlpha: 1 });
-      const mm = gsap.matchMedia();
-      mm.add("(prefers-reduced-motion: no-preference)", () => {
-        SplitText.create("[data-hero-title]", {
-          type: "lines",
-          mask: "lines",
-          autoSplit: true,
-          onSplit: (self) =>
-            gsap.from(self.lines, {
-              yPercent: 105,
-              duration: 0.9,
-              ease: "expo.out",
-              stagger: 0.08,
-            }),
-        });
-        gsap.from("[data-hero-in]", {
-          y: 14,
-          autoAlpha: 0,
-          duration: 0.6,
-          stagger: 0.07,
-          delay: 0.25,
-        });
-      });
-    },
-    { scope: root },
-  );
+// The hero entrance is CSS (.rise / .fade-up in globals.css): it plays from first paint, with no wait for hydration.
+const delay = (ms: number) => ({ "--d": `${ms}ms` }) as CSSProperties;
 
+export function Hero({ demo }: { demo: string }) {
   return (
     <section
       data-night
       aria-labelledby="hero-title"
-      className="night relative isolate z-[1] overflow-clip [--horizon-y:95%] lg:flex lg:min-h-[min(100svh,56rem)] lg:items-center lg:[--horizon-y:94%]"
+      className="night relative isolate z-[1] overflow-clip lg:flex lg:min-h-[min(100svh,56rem)] lg:items-center"
     >
       {/* Quiet zone: the waves drop to 22% under the copy so the lead keeps its contrast. */}
       <NightWaves
@@ -195,37 +168,39 @@ export function Hero({ demo }: { demo: string }) {
         className="absolute inset-0 -z-20 [mask-image:linear-gradient(to_bottom,rgb(0_0_0/0.22)_0_45%,#000_75%)] lg:[mask-image:linear-gradient(to_right,rgb(0_0_0/0.22)_0_30%,#000_62%)]"
       />
       <Horizon />
-      <div
-        ref={root}
-        data-hero
-        style={{ visibility: "hidden" }}
-        className="mx-auto grid w-full max-w-6xl grid-cols-1 items-center gap-14 px-4 pt-28 pb-32 sm:px-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] lg:gap-18 lg:pt-24 lg:pb-36"
-      >
+      <div className="mx-auto grid w-full max-w-6xl grid-cols-1 items-center gap-14 px-4 pt-28 pb-32 sm:px-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] lg:gap-18 lg:pt-24 lg:pb-36">
         <div>
           <p
-            data-hero-in
-            className="inline-flex items-center gap-2 rounded-full border bg-card px-3 py-1 text-xs text-muted-foreground"
+            style={delay(0)}
+            className="fade-up inline-flex items-center gap-2 rounded-full border bg-card px-3 py-1 text-xs text-muted-foreground"
           >
             <span className="size-1.5 rounded-full bg-success" /> For dental
             clinics in the UAE
           </p>
           <h1
             id="hero-title"
-            data-hero-title
-            className="mt-5 text-display font-semibold tracking-[-0.035em]"
+            className="mt-6 font-display text-display tracking-[-0.025em]"
           >
-            <span className="block">Closed for the night.</span>{" "}
-            <span className="block">Still taking bookings.</span>
+            <span className="block overflow-clip pb-[0.14em] -mb-[0.08em]">
+              <span style={delay(80)} className="rise block">
+                Closed for the night.
+              </span>
+            </span>{" "}
+            <span className="block overflow-clip pb-[0.14em] -mb-[0.08em]">
+              <span style={delay(170)} className="rise block text-primary">
+                Still taking bookings.
+              </span>
+            </span>
           </h1>
           <p
-            data-hero-in
-            className="mt-5 max-w-[42ch] text-lead text-pretty text-muted-foreground"
+            style={delay(320)}
+            className="fade-up mt-5 max-w-[42ch] text-lead text-pretty text-muted-foreground"
           >
             Sara is your clinic&apos;s AI receptionist on WhatsApp and your
             website. She books, moves and cancels visits in English and Arabic
             while the front desk is dark.
           </p>
-          <div data-hero-in className="mt-8 flex flex-wrap gap-3">
+          <div style={delay(400)} className="fade-up mt-8 flex flex-wrap gap-3">
             <Button asChild size="lg" className="max-sm:flex-1 max-sm:basis-44">
               <Link href={demo}>
                 Try the demo <ArrowRightIcon className="size-4" />
@@ -241,7 +216,7 @@ export function Hero({ demo }: { demo: string }) {
             </Button>
           </div>
         </div>
-        <div data-hero-in>
+        <div style={delay(480)} className="fade-up">
           <HeroConversation />
         </div>
       </div>
@@ -249,13 +224,12 @@ export function Hero({ demo }: { demo: string }) {
   );
 }
 
-// The glow horizon: air glow, planet body (hides the waves below the curve) and the sage rim. Night surfaces only.
-export function Horizon() {
+// First light at the edge of a night surface (dawn glow + hairline). `top` mirrors it, for the close band.
+export function Horizon({ top }: { top?: boolean }) {
   return (
-    <div aria-hidden className="horizon">
+    <div aria-hidden className="horizon" data-top={top || undefined}>
       <div className="horizon-air" />
-      <div className="horizon-planet" />
-      <div className="horizon-rim" />
+      <div className="horizon-line" />
     </div>
   );
 }
@@ -320,8 +294,19 @@ export function NightWaves({
   );
 }
 
-// Night to morning: a pre-rendered shot scrubbed by scroll, no pin. The section background follows the same progress.
-export function Bridge() {
+// The night film: the page's one pinned story. A pre-rendered HyperFrames shot (motion/night-film) scrubs while the
+// section is pinned; captions are live text, each shown over its own slice of progress (--a to --b) via --p.
+// ponytail: swap FILM to the night-film render (/frames/film, 150 + 75) once it lands; the old shot is the stand-in.
+const FILM = { base: "/frames/night", count: 90, smCount: 45 };
+const FILM_LENGTH = 3.5; // pinned scroll, in viewport heights
+const CAPTIONS = [
+  { a: 0.06, b: 0.27, time: "2:14 am", text: "A patient writes while the clinic sleeps." },
+  { a: 0.29, b: 0.47, time: "2:14 am", text: "Sara offers only times that are really free." },
+  { a: 0.49, b: 0.64, time: "2:15 am", text: "Booked. Nobody had to wake up." },
+  { a: 0.76, b: 1.5, time: "9:00 am", text: "Your team opens up to a full book.", day: true },
+];
+
+export function NightFilm() {
   const root = useRef<HTMLElement>(null);
   const onProgress = useCallback(
     (p: number) => root.current?.style.setProperty("--p", p.toFixed(3)),
@@ -332,50 +317,78 @@ export function Bridge() {
     C: typeof FrameSequenceType;
     end: string;
   } | null>(null);
+
+  useGSAP(
+    () => {
+      const mm = gsap.matchMedia();
+      mm.add("(prefers-reduced-motion: no-preference)", () => {
+        ScrollTrigger.create({
+          trigger: root.current,
+          start: "top top",
+          end: () => `+=${window.innerHeight * FILM_LENGTH}`,
+          pin: true,
+          anticipatePin: 1,
+          invalidateOnRefresh: true,
+        });
+      });
+    },
+    { scope: root },
+  );
+
   useEffect(() => {
-    // ponytail: the overlap is read once; a later resize keeps the first value (off by a few px at most).
-    const overlap = root.current
-      ? -parseFloat(getComputedStyle(root.current).marginTop) || 0
-      : 0;
-    import("@/components/frame-sequence").then((m) =>
-      setFrames({ C: m.FrameSequence, end: `top+=${Math.round(overlap)} top` }),
-    );
+    // ponytail: the scrub length is read once at mount; the pin itself re-measures on resize.
+    const end = `+=${Math.round(window.innerHeight * FILM_LENGTH)}`;
+    import("@/components/frame-sequence").then((m) => {
+      setFrames({ C: m.FrameSequence, end });
+      requestAnimationFrame(() => ScrollTrigger.refresh());
+    });
   }, []);
+
   return (
     <section
       ref={root}
-      aria-label="From night to morning"
-      className="bridge relative -mt-[min(9%,8rem)] pb-[calc(var(--spacing-section)*0.5)]"
+      data-night
+      aria-labelledby="film-title"
+      className="film relative h-svh overflow-clip bg-[var(--night)]"
     >
-      <div className="bridge-frame relative mx-auto aspect-[16/10] max-h-[88svh] w-full max-w-[90rem]">
-        {/* Ends as the hero's bottom edge (the section top plus the overlap) reaches the viewport top: the night hero has just
-            left, so the light ramp never meets it. */}
+      <h2 id="film-title" className="sr-only">
+        One night at the clinic
+      </h2>
+      <div aria-hidden className="absolute inset-0">
         {Frames && (
           <Frames.C
-            base="/frames/night"
-            count={90}
-            smCount={45}
+            {...FILM}
+            start="top top"
             end={Frames.end}
             onProgress={onProgress}
             className="size-full"
           />
         )}
       </div>
-      <div className="mx-auto mt-6 w-full max-w-6xl px-4 sm:px-6 md:absolute md:inset-x-0 md:bottom-[calc(var(--spacing-section)*0.5+8%)] md:mt-0">
-        <div className="grid min-h-28 items-end md:min-h-0">
-          <p className="bridge-c1 col-start-1 row-start-1 max-w-[22ch] text-h2 font-semibold tracking-[-0.03em] text-balance">
-            <small className="mb-2 block text-[15px] font-medium tracking-normal tabular-nums">
-              2:14 am
-            </small>
-            A patient asks for Thursday. Sara answers.
-          </p>
-          <p className="bridge-c2 col-start-1 row-start-1 max-w-[22ch] text-h2 font-semibold tracking-[-0.03em] text-balance">
-            <small className="mb-2 block text-[15px] font-medium tracking-normal tabular-nums text-muted-foreground">
-              9:00 am
-            </small>
-            Your team opens up to a full book.
-          </p>
-        </div>
+      <div aria-hidden className="film-scrim absolute inset-0" />
+      <div className="relative mx-auto flex h-full w-full max-w-6xl items-end px-4 pb-[14svh] sm:px-6">
+        <ol className="grid">
+          {CAPTIONS.map((c) => (
+            <li
+              key={c.text}
+              style={{ "--a": c.a, "--b": c.b } as CSSProperties}
+              className={cn(
+                "film-cap col-start-1 row-start-1 max-w-[17ch] font-display text-h2 tracking-[-0.02em] text-balance",
+                c.day ? "text-foreground" : "text-[var(--night-foreground)]",
+              )}
+            >
+              <span
+                className={cn(
+                  "mb-3 block font-sans text-sm font-medium tracking-normal tabular-nums",
+                  c.day ? "text-dawn-deep" : "text-dawn",
+                )}
+              >
+                {c.time}
+              </span>
+              {c.text}
+            </li>
+          ))}
+        </ol>
       </div>
     </section>
   );
@@ -688,208 +701,68 @@ const STEPS = [
     text: "24 hours and 2 hours before. Reply 1 to confirm or 2 to change it.",
   },
 ];
-const STEP_OF = [0, 1, 1, 2, 3]; // story state to caption
-const LAST = 4;
 
-export function NightShift({ heading }: { heading: ReactNode }) {
-  const root = useRef<HTMLElement>(null);
-  const pin = useRef<HTMLDivElement>(null);
-  const ticket = useRef<HTMLDivElement>(null);
-  const booked = useRef<HTMLDivElement>(null);
-  const slot = useRef<HTMLDivElement>(null);
-  const shown = useRef(0);
-  const [step, setStep] = useState(0);
-
-  useGSAP(
-    () => {
-      const mm = gsap.matchMedia();
-      // Desktop: the section pins and scrolling walks the story one state at a time.
-      mm.add(
-        "(min-width: 1024px) and (prefers-reduced-motion: no-preference)",
-        () => {
-          ScrollTrigger.create({
-            trigger: pin.current,
-            start: "top top",
-            end: () => `+=${window.innerHeight * 2.5}`,
-            pin: true,
-            anticipatePin: 1,
-            invalidateOnRefresh: true,
-            onUpdate: (st) =>
-              setStep(Math.min(LAST, Math.floor(st.progress * (LAST + 1)))),
-          });
-        },
-      );
-      // Phones and tablets: no pin; the story plays once on a timer when it comes into view.
-      mm.add(
-        "(max-width: 1023.98px) and (prefers-reduced-motion: no-preference)",
-        () => {
-          const calls: gsap.core.Tween[] = [];
-          ScrollTrigger.create({
-            trigger: pin.current,
-            start: "top 55%",
-            once: true,
-            onEnter: () =>
-              [1, 2, 3, 4].forEach((s) =>
-                calls.push(gsap.delayedCall(s * 1.6, () => setStep(s))),
-              ),
-          });
-          return () => calls.forEach((c) => c.kill());
-        },
-      );
-      mm.add("(prefers-reduced-motion: reduce)", () => setStep(LAST));
-    },
-    { scope: root },
-  );
-
-  // Step 3: the booking leaves the chat and settles into Thursday 18:30. Flip.fit measures both ends live, so resizes are safe.
-  useGSAP(
-    () => {
-      const from = shown.current;
-      shown.current = step;
-      gsap.killTweensOf([ticket.current, slot.current]);
-      if (step < 3) {
-        gsap.set(ticket.current, { autoAlpha: 0 });
-        gsap.to(slot.current, { autoAlpha: 0, duration: 0.2 });
-        return;
-      }
-      if (from >= 3) return;
-      if (
-        !booked.current ||
-        window.matchMedia("(prefers-reduced-motion: reduce)").matches
-      ) {
-        gsap.set(slot.current, { autoAlpha: 1 });
-        return;
-      }
-      Flip.fit(ticket.current, booked.current, { scale: false });
-      gsap
-        .timeline()
-        .set(ticket.current, { autoAlpha: 1 })
-        .add(
-          Flip.fit(ticket.current, slot.current, {
-            scale: false,
-            duration: 0.8,
-            ease: "power3.inOut",
-          }) as gsap.core.Tween,
-        )
-        .set(slot.current, { autoAlpha: 1 })
-        .to(ticket.current, { autoAlpha: 0, duration: 0.15 });
-    },
-    { dependencies: [step], scope: root },
-  );
-
-  const current = STEP_OF[step];
+// How it works, in daylight: the night's booking as three real pieces of the product, then the week it lands in.
+// No pin (the film is the page's one pinned story): each step reveals as it scrolls in.
+export function HowItWorks({ heading }: { heading: ReactNode }) {
+  const cards = [
+    <ChatShell key="1" time="23:40" className="h-full">
+      <PatientBubble>Hi, anything free Thursday evening for a cleaning?</PatientBubble>
+    </ChatShell>,
+    <ChatShell key="2" time="23:40" className="h-full">
+      <div className="flex flex-col gap-2">
+        <Bubble>Yes, these evening times are free on Thursday:</Bubble>
+        <SlotPicker slots={SLOTS} onPick={() => {}} picked={PICK} />
+      </div>
+    </ChatShell>,
+    <ChatShell key="3" time="23:41" className="h-full">
+      <BookedCard booked={BOOKED} />
+      <Bubble>
+        <span className="mb-1 block text-xs text-muted-foreground">Wed 28 Oct, 6:30 pm</span>
+        Reminder: your cleaning is tomorrow at 6:30 pm. Reply 1 to confirm or 2 to change it.
+      </Bubble>
+    </ChatShell>,
+  ];
   return (
-    <section id="how" ref={root}>
-      <div
-        ref={pin}
-        className="py-section lg:flex lg:h-svh lg:items-center lg:py-0 lg:pt-20"
-      >
-        <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-10 px-4 sm:px-6 lg:grid-cols-[21rem_1fr] lg:items-center lg:gap-12">
-          <div>
-            {heading}
-            <ol className="mt-8 grid gap-1 sm:grid-cols-2 lg:mt-10 lg:grid-cols-1">
-              {STEPS.map((s, i) => (
-                <li
-                  key={s.title}
-                  aria-current={i === current ? "step" : undefined}
-                  className={cn(
-                    "border-s-2 py-2 ps-4 transition-[border-color,opacity] duration-300",
-                    i === current ? "border-primary" : "border-border",
-                    i > current && "opacity-50",
-                  )}
-                >
-                  <h3 className="text-[15px] font-semibold">{s.title}</h3>
-                  <p className="mt-1 text-sm text-pretty text-muted-foreground">
-                    {s.text}
-                  </p>
-                </li>
-              ))}
-            </ol>
+    <section id="how" className="py-section">
+      <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
+        {heading}
+        <ol className="mt-14 grid grid-cols-1 gap-x-6 gap-y-12 md:grid-cols-3">
+          {STEPS.slice(0, 3).map((s, i) => (
+            <li key={s.title} data-reveal className="flex flex-col">
+              <div className="flex items-baseline gap-3 border-t pt-4">
+                <span className="font-display text-3xl text-dawn-deep tabular-nums">0{i + 1}</span>
+                <h3 className="font-semibold">{s.title}</h3>
+              </div>
+              <p className="mt-2 min-h-[2lh] text-sm text-pretty text-muted-foreground">{s.text}</p>
+              <div aria-hidden className="mt-6 h-[19rem]">
+                {cards[i]}
+              </div>
+            </li>
+          ))}
+        </ol>
+        <div data-reveal className="mt-16 grid grid-cols-1 gap-8 lg:grid-cols-[18rem_1fr] lg:items-end">
+          <div className="border-t pt-4">
+            <span className="font-display text-3xl text-dawn-deep tabular-nums">04</span>
+            <h3 className="mt-2 font-semibold">{STEPS[3].title}</h3>
+            <p className="mt-2 text-sm text-pretty text-muted-foreground">{STEPS[3].text}</p>
           </div>
-
-          <div className="relative grid grid-cols-1 gap-5 md:grid-cols-[18.5rem_1fr] md:items-start">
-            <ChatShell time="23:40" className="h-[26rem] md:h-[27.3rem]">
-              <AnimatePresence initial={false}>
-                <Line key="p1">
-                  <PatientBubble>
-                    Hi, anything free Thursday evening for a cleaning?
-                  </PatientBubble>
-                </Line>
-                {step >= 1 && (
-                  <Line key="s1">
-                    <div className="flex flex-col gap-2">
-                      <Bubble>
-                        Yes, these evening times are free on Thursday:
-                      </Bubble>
-                      <SlotPicker
-                        slots={SLOTS}
-                        onPick={() => {}}
-                        picked={step >= 2 ? PICK : undefined}
-                      />
-                    </div>
-                  </Line>
-                )}
-                {step >= 2 && (
-                  <Line key="p2">
-                    <PatientBubble>
-                      6:30 pm on Thu 29 Oct works for me
-                    </PatientBubble>
-                  </Line>
-                )}
-                {step >= 2 && (
-                  <Line key="b">
-                    <div ref={booked}>
-                      <BookedCard booked={BOOKED} />
-                    </div>
-                  </Line>
-                )}
-                {step >= 4 && (
-                  <Line key="r">
-                    <Bubble>
-                      <span className="mb-1 block text-xs text-muted-foreground">
-                        Wed 28 Oct, 6:30 pm
-                      </span>
-                      Reminder: your cleaning is tomorrow at 6:30 pm. Reply 1 to
-                      confirm or 2 to change it.
-                    </Bubble>
-                  </Line>
-                )}
-                {step >= 4 && (
-                  <Line key="p3">
-                    <PatientBubble>1</PatientBubble>
-                  </Line>
-                )}
-              </AnimatePresence>
-            </ChatShell>
-
-            <WeekCalendar
-              title="Your week"
-              days={DAYS}
-              blocks={BLOCKS}
-              from={FROM}
-              to={21}
-              extra={(d) =>
-                d === 3 && (
-                  <div
-                    ref={slot}
-                    className="invisible absolute inset-x-1"
-                    style={{ top: (18.5 - FROM) * ROW + 2, height: ROW - 4 }}
-                  >
-                    <TicketFace confirmed={step >= 4} />
+          <WeekCalendar
+            title="Your week"
+            days={DAYS}
+            blocks={BLOCKS}
+            from={FROM}
+            to={21}
+            extra={(d) =>
+              d === 3 && (
+                <div className="absolute inset-x-1" style={{ top: (18.5 - FROM) * ROW + 2, height: ROW - 4 }}>
+                  <div className="booked-glow h-full rounded-[4px]">
+                    <TicketFace confirmed />
                   </div>
-                )
-              }
-            />
-
-            {/* The booking in flight, sized and placed by Flip.fit. */}
-            <div
-              ref={ticket}
-              aria-hidden
-              className="invisible absolute start-0 top-0 z-20"
-            >
-              <TicketFace />
-            </div>
-          </div>
+                </div>
+              )
+            }
+          />
         </div>
       </div>
     </section>
