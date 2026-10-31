@@ -12,8 +12,8 @@ export function frameAt(progress: number, count: number) {
 const frameUrl = (base: string, set: string, i: number) => `${base}/${set}/${String(i + 1).padStart(4, "0")}.webp`;
 
 // Plays a pre-rendered WebP sequence (`${base}/lg/0001.webp`, `${base}/sm/0001.webp`) on a canvas, scrubbed by scroll.
-// The scrub runs while the canvas's parent scrolls through the viewport (top hits top to bottom hits bottom),
-// so put the canvas in a tall wrapper and make it sticky.
+// No pin: the scrub runs while the canvas's parent crosses the viewport, from its top entering at the bottom
+// to its bottom reaching 40% below the viewport top (landing spec, bridge section).
 export function FrameSequence({ base, count, smCount, className }: { base: string; count: number; smCount: number; className?: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
 
@@ -82,7 +82,7 @@ export function FrameSequence({ base, count, smCount, className }: { base: strin
     const tween = gsap.to(state, {
       p: 1,
       ease: "none",
-      scrollTrigger: { trigger: canvas.parentElement ?? canvas, start: "top top", end: "bottom bottom", scrub: 0.4 },
+      scrollTrigger: { trigger: canvas.parentElement ?? canvas, start: "top bottom", end: "bottom top+=40%", scrub: 0.6 },
       onUpdate: () => {
         const next = frameAt(state.p, n);
         if (next === current) return;
