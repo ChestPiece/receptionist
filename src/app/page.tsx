@@ -1,6 +1,6 @@
 import { ArrowRightIcon, CheckIcon, ShieldCheckIcon, SirenIcon, StethoscopeIcon, UserRoundIcon } from "lucide-react";
 import Link from "next/link";
-import { Hero, Nav, NightShift, Reveals } from "@/components/landing";
+import { Bridge, Hero, Horizon, Nav, NightShift, NightWaves, Reveals } from "@/components/landing";
 import { ThemeToggle } from "@/components/ledger";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
@@ -80,6 +80,7 @@ export default function Home() {
       </noscript>
       <Nav demo={DEMO} />
       <Hero demo={DEMO} />
+      <Bridge />
 
       <NightShift heading={<Heading eyebrow="How it works" title="One booking, while your desk is closed." />} />
 
@@ -112,49 +113,67 @@ export default function Home() {
           </div>
           <ul className="border-t">
             {SAFETY.map((s) => (
-              <li key={s.title} data-reveal className="grid gap-x-6 gap-y-2 border-b py-6 sm:grid-cols-[2.25rem_13rem_1fr]">
-                <span className="flex size-9 items-center justify-center rounded-lg border bg-card">
-                  <s.icon className="size-4 text-primary" />
-                </span>
-                <h3 className="font-semibold sm:pt-1.5">{s.title}</h3>
-                <p className="text-sm text-pretty text-muted-foreground sm:pt-1.5">{s.text}</p>
+              <li key={s.title} data-reveal className="grid grid-cols-[1.25rem_1fr] gap-x-4 gap-y-2 border-b py-6 sm:grid-cols-[1.25rem_13rem_1fr] sm:gap-x-6">
+                <s.icon aria-hidden className="mt-1 size-4 text-primary" />
+                <h3 className="font-semibold">{s.title}</h3>
+                <p className="col-start-2 text-sm text-pretty text-muted-foreground sm:col-start-3 sm:mt-0.5">{s.text}</p>
               </li>
             ))}
           </ul>
         </Container>
       </section>
 
-      <section className="border-t py-section">
-        <Container>
-          <div data-reveal className="flex flex-col items-start gap-6 rounded-2xl bg-primary px-6 py-10 text-primary-foreground sm:px-10 sm:py-14 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 className="text-h2 font-semibold tracking-[-0.03em]">See Sara book a visit.</h2>
-              <p className="mt-3 opacity-80">The demo runs on a sample clinic. Try it in English or Arabic.</p>
-            </div>
-            <Button asChild size="lg" variant="secondary">
-              <Link href={DEMO}>
-                Open the demo chat <ArrowRightIcon className="size-4" />
+      <div data-night className="night">
+        <section aria-labelledby="close-title" className="relative isolate overflow-clip pt-section pb-[calc(var(--spacing-section)*1.5)] [--horizon-y:82%]">
+          <NightWaves
+            when="near"
+            spacing={12}
+            opacity={0.4}
+            speed={0.18}
+            direction={200}
+            fade="center"
+            fadeSize={0.6}
+            interactive={false}
+            intro={false}
+            className="absolute inset-0 -z-20"
+          />
+          <Horizon />
+          <Container className="flex flex-col items-center text-center">
+            <h2 id="close-title" data-reveal className="max-w-[18ch] text-h2 font-semibold tracking-[-0.03em] text-balance">
+              Let Sara take the night shift.
+            </h2>
+            <p data-reveal className="mt-4 max-w-md text-pretty text-muted-foreground">
+              The demo runs on a sample clinic. Try it in English or Arabic.
+            </p>
+            <div data-reveal className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-3">
+              <Button asChild size="lg">
+                <Link href={DEMO}>
+                  Open the demo chat <ArrowRightIcon className="size-4" />
+                </Link>
+              </Button>
+              <Link href="/login" className="text-sm font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+                Staff sign in
               </Link>
-            </Button>
-          </div>
-        </Container>
-      </section>
+            </div>
+          </Container>
+        </section>
 
-      <footer className="border-t">
-        <Container className="flex flex-col gap-4 py-8 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-          <Logo className="text-xl text-foreground" />
-          <nav className="flex flex-wrap items-center gap-x-5 gap-y-2">
-            <Link href={DEMO} className="hover:text-foreground">
-              Try the demo
-            </Link>
-            <Link href="/login" className="hover:text-foreground">
-              Staff sign in
-            </Link>
-            <span>Sample clinic, sample data.</span>
-            <ThemeToggle />
-          </nav>
-        </Container>
-      </footer>
+        <footer>
+          <Container className="flex flex-col gap-4 py-8 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+            <Logo className="text-xl text-foreground" />
+            <nav className="flex flex-wrap items-center gap-x-5 gap-y-2">
+              <Link href={DEMO} className="hover:text-foreground">
+                Try the demo
+              </Link>
+              <Link href="/login" className="hover:text-foreground">
+                Staff sign in
+              </Link>
+              <span>Sample clinic, sample data.</span>
+              <ThemeToggle />
+            </nav>
+          </Container>
+        </footer>
+      </div>
       <Reveals />
     </div>
   );

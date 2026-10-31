@@ -39,10 +39,19 @@ Locked 2026-10-25 (supersedes "The Ledger"). Applies to every surface: landing, 
 - Content width `max-w-6xl` (landing), `max-w-3xl` (chat column). Section rhythm `py-20`, side gutter `px-4 sm:px-6`.
 
 ## Patterns
-- Landing: floating rounded navbar (logo, links, Sign in, Try the demo), hero with chat replay, features, how it works, safety, sage CTA band, footer with logo + theme toggle.
+- Landing: floating rounded navbar (logo, links, Sign in, Try the demo), night hero with chat replay, night-to-morning bridge, how it works, features, safety, night close band, night footer with logo + theme toggle (see the amendment below).
 - Chat: left collapsible sidebar (logo, Back to site, New chat, clinic card, `<details>` info blocks, theme toggle); a left sheet on phones. Assistant replies are plain text, patient replies are sage bubbles.
 - Motion (relaxed 2026-10-26): UI feedback stays 150-250 ms ease-out. GSAP (`src/lib/gsap.ts`, ScrollTrigger + Flip + SplitText) is allowed on marketing pages: one pinned scroll story per page, scroll reveals, a hero line reveal; scroll-linked moves up to 900 ms, eases `power3`/`expo`, no bounce. Reduced motion: no pin, final state shown. Dashboard: no GSAP.
 - Fluid scale: `text-display`, `text-h2`, `text-lead`, `py-section` (clamp tokens in `globals.css`). Hero fits the first viewport.
 
 ## Banned
 Paper/dot textures, torn edges, gradient blobs, glassmorphism beyond the navbar blur, emoji in UI, icon-in-a-square logos, invented stats or client logos.
+
+## Amendment 2026-10-30 (approved 2026-10-31): night surfaces (marketing only)
+- **Allowed on marketing pages (`/`) only**: night surfaces for the hero, the close band and the footer. Never in chat, login or dashboard.
+- **Tokens**: `--night` (#0d1210 light theme, #0a0d0c dark theme), `--night-foreground` #f2f1ee, `--night-muted` #a3aca6, `--night-accent` #93b59d, `--night-border` #2c3832, `--night-alert` #e8825f. Night surfaces look the same in both themes. Use the `.night` scope utility; never hand-colour a night element.
+- **One PatternWaves surface type**: the React Bits `silk` dot preset in `--night-accent`, transparent background, on night surfaces only. At most two instances per page (hero, close band), lazy-loaded (`next/dynamic`, after idle or near the viewport), paused offscreen, never on light surfaces. Fallback is the plain night surface, never a dot texture.
+- **One glow horizon per night surface**: CSS only (air radial, planet circle, sage rim shadows), sage only. Static after a one-time fade-in.
+- **One frame sequence per page**: the night-to-morning bridge. Scroll-scrubbed, not pinned. Frames carry no text; captions are live DOM.
+- **Lit screen**: the hero chat may use light card tokens and a sage halo shadow on night surfaces. This is the only shadow above `shadow-sm`.
+- **Still banned**: paper/dot textures (as static images or CSS), torn edges, free gradient blobs (the horizon air is the only radial, and only under a rim), glassmorphism beyond the navbar blur, gradient text, neon or any accent other than sage on night, emoji, icon-in-a-square logos and icon tiles, invented stats or client logos, a second pinned story, WebGL on light surfaces, text baked into frames.

@@ -59,7 +59,7 @@
     --radius-4xl: calc(var(--radius) * 2.6);
 
     /* Fluid scale: 360px to 1440px viewports. text-display, text-h2, py-section. */
-    --text-display: clamp(2.5rem, 1.9rem + 2.6vw, 4.25rem);
+    --text-display: clamp(2.125rem, 1.4rem + 2.6vw, 3.5rem); /* each hero sentence fits one line from 375 px up */
     --text-display--line-height: 1.02;
     --text-h2: clamp(1.875rem, 1.5rem + 1.6vw, 2.875rem);
     --text-h2--line-height: 1.08;
@@ -114,6 +114,14 @@
     --sidebar-ring: color-mix(in oklab, #4f6f5c 55%, transparent);
     --shadow-slip: 0 1px 2px rgb(12 10 9 / 0.05);
 
+    /* Night surfaces (landing hero, close band, footer). Night stays night in both themes. Contrast in .tastemaker/style-lock.md. */
+    --night: #0d1210;
+    --night-foreground: #f2f1ee;
+    --night-muted: #a3aca6;
+    --night-accent: #93b59d;
+    --night-border: #2c3832;
+    --night-alert: #e8825f;
+
     /* Motion tokens */
     --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
     --ease-loop: cubic-bezier(0.77, 0, 0.175, 1);
@@ -166,6 +174,7 @@
     --sidebar-border: #292524;
     --sidebar-ring: color-mix(in oklab, #93b59d 55%, transparent);
     --shadow-slip: 0 1px 2px rgb(0 0 0 / 0.4);
+    --night: #0a0d0c;
 }
 
 @layer base {
@@ -225,3 +234,67 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+@layer components {
+/* Night scope: re-points the shared tokens, so buttons, the logo and text work unchanged on a night surface. Marketing pages only. */
+.night {
+  --background: var(--night);
+  --foreground: var(--night-foreground);
+  --card: color-mix(in oklab, var(--night-foreground) 4%, var(--night));
+  --card-foreground: var(--night-foreground);
+  --muted: color-mix(in oklab, var(--night-foreground) 8%, var(--night));
+  --muted-foreground: var(--night-muted);
+  --border: var(--night-border);
+  --input: var(--night-border);
+  --primary: var(--night-accent);
+  --primary-foreground: var(--night);
+  --success: var(--night-accent);
+  --alert: var(--night-alert);
+  --ring: color-mix(in oklab, var(--night-accent) 55%, transparent);
+  background-color: var(--night);
+  color: var(--foreground);
+}
+
+/* A lit phone screen on a night surface: light card tokens in both themes. */
+.screen {
+  --background: #fafaf9;
+  --foreground: #0c0a09;
+  --card: #ffffff;
+  --card-foreground: #0c0a09;
+  --muted: #f5f5f4;
+  --muted-foreground: #6b6560;
+  --border: #e7e5e4;
+  --primary: #4f6f5c;
+  --primary-foreground: #ffffff;
+  --sage-soft: #dfe8df;
+  --success: #4f6f5c;
+  --success-foreground: #ffffff;
+  --web: #33506e;
+  --alert: #ad4320;
+  color: var(--foreground);
+}
+}
+
+/* Glow horizon: a planet edge in CSS, night surfaces only. The planet body hides the waves below it; the rim carries the sage light. */
+.horizon { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
+.horizon-air { position: absolute; left: 50%; bottom: 0; width: 140%; height: 70%; translate: -50% 0;
+  background: radial-gradient(42% 46% at 50% calc(var(--horizon-y, 86%) / 0.7 - 30%), color-mix(in oklab, var(--night-accent) 30%, transparent), transparent 70%); }
+.horizon-planet, .horizon-rim { position: absolute; left: 50%; top: var(--horizon-y, 86%); width: 280vw; aspect-ratio: 1; translate: -50% 0; border-radius: 50%; }
+.horizon-planet { background: var(--night); }
+.horizon-rim {
+  box-shadow: 0 -1px 0 0 var(--night-foreground), 0 -1px 6px 1px var(--night-accent),
+    0 -8px 40px 2px color-mix(in oklab, var(--night-accent) 70%, transparent), 0 -40px 140px 10px color-mix(in oklab, var(--night-accent) 35%, transparent);
+  mask-image: linear-gradient(to right, transparent 36%, #000 47%, #000 53%, transparent 64%);
+}
+
+/* Night-to-morning bridge. --p is scroll progress (0 to 1), set by the frame sequence.
+   --q is the background ramp, in the last 10% only: the scrub ends as the section top reaches the viewport top, so the night
+   hero above has just left and never sits on a lightened bridge. --d dims the bright morning frames in the dark theme, earlier. */
+.bridge { --p: 0; --q: clamp(0, (var(--p) - 0.9) * 10, 1); --d: clamp(0, (var(--p) - 0.7) * 4, 1); background-color: color-mix(in oklab, var(--night) calc((1 - var(--q)) * 100%), var(--background)); }
+.bridge-frame { mask-image: linear-gradient(to bottom, transparent, #000 14%, #000 82%, transparent), linear-gradient(to right, transparent, #000 8%, #000 92%, transparent); mask-composite: intersect; }
+.bridge-c1 { color: var(--night-foreground); opacity: clamp(0, (0.62 - var(--p)) * 5, 1); }
+.bridge-c2 { opacity: clamp(0, (var(--p) - 0.88) * 9, 1); }
+.bridge-c1 small { color: var(--night-muted); }
+/* Dark theme: the morning frames are bright, so they dim as morning arrives and end close to the dark body, keeping the 9:00 caption readable. */
+.dark .bridge-frame canvas { filter: brightness(calc(1 - var(--d) * 0.8)); }
+@media (prefers-reduced-motion: reduce) { .bridge { --p: 1 !important; } }
