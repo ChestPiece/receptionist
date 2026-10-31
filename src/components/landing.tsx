@@ -2,14 +2,14 @@
 
 // Client pieces of the landing page: nav, night hero with its demo (English / Arabic), the night-to-morning bridge,
 // the pinned "night shift" story, the WebGL waves and scroll reveals.
-import dynamic from "next/dynamic";
 import Link from "next/link";
 import { ArrowRightIcon, CheckIcon, RotateCcwIcon } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { BookedCard, Bubble, EASE_OUT, PatientBubble, SlotPicker, TypingDots } from "@/components/chat-cards";
 import { ROW, WeekCalendar, type Block } from "@/components/ledger";
 import { Logo } from "@/components/logo";
+import type { FrameSequence as FrameSequenceType } from "@/components/frame-sequence";
 import type { PatternWavesProps } from "@/components/pattern-waves";
 import { Button } from "@/components/ui/button";
 import { Flip, gsap, ScrollTrigger, SplitText, useGSAP } from "@/lib/gsap";
@@ -171,18 +171,17 @@ export function Horizon() {
   );
 }
 
-const PatternWaves = dynamic(() => import("@/components/pattern-waves"), { ssr: false });
-const FrameSequence = dynamic(() => import("@/components/frame-sequence").then((m) => m.FrameSequence), { ssr: false });
-
-// WebGL dots on a night surface, loaded after first paint ("idle") or near the viewport ("near"), so ogl stays out of
-// the first-load bundle. Reduced motion and no WebGL2 leave the plain night surface and the horizon.
+// WebGL dots on a night surface, imported after first paint ("idle") or near the viewport ("near"), so ogl stays out of
+// the first-load bundle. A plain import() rather than next/dynamic, whose loader would add to that bundle. Reduced motion and no WebGL2 leave the plain night surface and the horizon.
 export function NightWaves({ when, className, ...props }: PatternWavesProps & { when: "idle" | "near" }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [on, setOn] = useState<{ color: string; fine: boolean } | null>(null);
+  const [on, setOn] = useState<{ Waves: ComponentType<PatternWavesProps>; color: string; fine: boolean } | null>(null);
   useEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const show = () =>
-      setOn({ color: getComputedStyle(document.documentElement).getPropertyValue("--night-accent").trim(), fine: window.matchMedia("(pointer: fine)").matches });
+      import("@/components/pattern-waves").then((m) =>
+        setOn({ Waves: m.default, color: getComputedStyle(document.documentElement).getPropertyValue("--night-accent").trim(), fine: window.matchMedia("(pointer: fine)").matches }),
+      );
     if (when === "idle") {
       if ("requestIdleCallback" in window) {
         const id = window.requestIdleCallback(show, { timeout: 1500 });
@@ -204,7 +203,7 @@ export function NightWaves({ when, className, ...props }: PatternWavesProps & { 
   }, [when]);
   return (
     <div ref={ref} aria-hidden className={className}>
-      {on && <PatternWaves preset="silk" backgroundColor="transparent" {...props} color={on.color} interactive={(props.interactive ?? true) && on.fine} className="size-full" />}
+      {on && <on.Waves preset="silk" backgroundColor="transparent" {...props} color={on.color} interactive={(props.interactive ?? true) && on.fine} className="size-full" />}
     </div>
   );
 }
@@ -213,11 +212,16 @@ export function NightWaves({ when, className, ...props }: PatternWavesProps & { 
 export function Bridge() {
   const root = useRef<HTMLElement>(null);
   const onProgress = useCallback((p: number) => root.current?.style.setProperty("--p", p.toFixed(3)), []);
+  // Imported after mount, like NightWaves, to keep the frame player out of the first-load bundle.
+  const [Frames, setFrames] = useState<{ C: typeof FrameSequenceType } | null>(null);
+  useEffect(() => {
+    import("@/components/frame-sequence").then((m) => setFrames({ C: m.FrameSequence }));
+  }, []);
   return (
     <section ref={root} aria-label="From night to morning" className="bridge relative pb-[calc(var(--spacing-section)*0.5)]">
       <div className="bridge-frame relative mx-auto aspect-[16/10] max-h-[88svh] w-full max-w-[90rem]">
         {/* Ends when the frame's bottom reaches the viewport bottom, so the ramp is finished before the light body shows. */}
-        <FrameSequence base="/frames/night" count={90} smCount={45} end="bottom bottom" onProgress={onProgress} className="size-full" />
+        {Frames && <Frames.C base="/frames/night" count={90} smCount={45} end="bottom bottom" onProgress={onProgress} className="size-full" />}
       </div>
       <div className="mx-auto mt-6 w-full max-w-6xl px-4 sm:px-6 md:absolute md:inset-x-0 md:bottom-[calc(var(--spacing-section)*0.5+8%)] md:mt-0">
         <div className="grid min-h-28 items-end md:min-h-0">
