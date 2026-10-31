@@ -158,7 +158,7 @@ function SidebarBody({ name, sample, logo, persona, info, phone }: SideProps) {
       <Link href="/" className="px-5 pt-4 pb-1" aria-label="Receptionist Agent home">
         <Logo className="text-xl" />
       </Link>
-      <div className="flex flex-col gap-1 p-3">
+      <div className="flex flex-col gap-1.5 px-3 pb-4 pt-3">
         <Button asChild variant="ghost" className="justify-start text-muted-foreground">
           <Link href="/">
             <ArrowLeftIcon className="size-4" /> Back to site
@@ -172,7 +172,7 @@ function SidebarBody({ name, sample, logo, persona, info, phone }: SideProps) {
         <Avatar logo={logo} name={name} letter={persona[0]} />
         <div className="min-w-0 leading-tight">
           <div className="truncate font-medium">{name}</div>
-          <div className="mt-0.5 text-xs text-muted-foreground">{sample ? "Dental clinic · sample data" : "Dental clinic"}</div>
+          <div className="mt-1 text-xs text-muted-foreground">{sample ? "Dental clinic · sample data" : "Dental clinic"}</div>
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
@@ -186,7 +186,7 @@ function SidebarBody({ name, sample, logo, persona, info, phone }: SideProps) {
   );
 }
 
-const STARTERS = ["Book a check-up", "How much is a cleaning?", "Where are you located?", "أبغى أحجز موعد"];
+const STARTERS = ["Book a cleaning", "Anything free Thursday evening?", "مواعيدكم يوم السبت؟", "Do you take my insurance?"];
 
 // One anonymous id per browser, so Sara remembers the visitor between visits.
 function visitorId() {
@@ -226,7 +226,7 @@ function ToolCard({ part, onPick, busy }: { part: DynamicToolUIPart; onPick: (te
 function Enter({ children }: { children: ReactNode }) {
   const reduce = useReducedMotion();
   return (
-    <motion.div initial={reduce ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, ease: EASE_OUT }}>
+    <motion.div initial={reduce ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, ease: EASE_OUT }}>
       {children}
     </motion.div>
   );
@@ -319,7 +319,7 @@ function ChatView({ slug, clinicName, persona, phone, logo, info, id, history }:
                   <span className="online-ring absolute inset-0 rounded-full bg-success" />
                   <span className="relative size-1.5 rounded-full bg-success" />
                 </span>
-                {persona} · online
+                {persona}, virtual receptionist
               </div>
             </div>
           </div>
@@ -333,26 +333,16 @@ function ChatView({ slug, clinicName, persona, phone, logo, info, id, history }:
         </header>
 
         <Conversation className="flex-1">
-          <ConversationContent className="mx-auto w-full max-w-3xl gap-6 px-4 py-8">
+          <ConversationContent className="mx-auto w-full max-w-3xl gap-7 px-4 py-8 sm:px-6">
+            {empty && (
+              <h1 className="pt-[clamp(1rem,10svh,5rem)] font-[family-name:var(--font-newsreader)] text-4xl font-normal tracking-[-0.02em] text-balance sm:text-5xl">
+                {name}
+              </h1>
+            )}
             <AnimatePresence mode="wait" initial={false}>
               {greeted || !empty ? (
                 <Enter key="greeting">
-                  {empty ? (
-                    <div className="flex flex-col items-center pt-[clamp(1.5rem,16svh,9rem)] text-center">
-                      <Avatar logo={logo} name={name} letter={persona[0]} className="size-12 text-base" />
-                      <h1 className="mt-4 text-2xl font-semibold tracking-tight">Hi, I&apos;m {persona}</h1>
-                      <p className="mt-2 max-w-sm text-sm text-pretty text-muted-foreground">
-                        The virtual receptionist at {name}. I can book, move or cancel a visit, and answer questions about prices, hours and location.
-                      </p>
-                      <div className="mt-8 flex max-w-2xl flex-wrap justify-center gap-2">
-                        {STARTERS.map((q, i) => (
-                          <motion.div key={q} initial={reduce ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, ease: EASE_OUT, delay: 0.15 + i * 0.04 }}>
-                            <Suggestion suggestion={q} onClick={send} dir="auto" />
-                          </motion.div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : (
+                  <div className="flex flex-col gap-5">
                     <Message from="assistant">
                       <MessageContent>
                         <Bubble>
@@ -360,7 +350,16 @@ function ChatView({ slug, clinicName, persona, phone, logo, info, id, history }:
                         </Bubble>
                       </MessageContent>
                     </Message>
-                  )}
+                    {empty && (
+                      <div className="flex flex-wrap gap-2">
+                        {STARTERS.map((q, i) => (
+                          <motion.div key={q} initial={reduce ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, ease: EASE_OUT, delay: 0.1 + i * 0.04 }}>
+                            <Suggestion suggestion={q} onClick={send} dir="auto" className="h-9 bg-card" />
+                          </motion.div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </Enter>
               ) : (
                 <motion.div key="typing" exit={{ opacity: 0 }} transition={{ duration: 0.12 }}>
@@ -419,7 +418,7 @@ function ChatView({ slug, clinicName, persona, phone, logo, info, id, history }:
           <ConversationScrollButton />
         </Conversation>
 
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-4 pb-3 pt-2">
+        <div className="relative mx-auto flex w-full max-w-3xl flex-col gap-3 px-4 pb-4 pt-1 before:pointer-events-none before:absolute before:inset-x-0 before:-top-8 before:h-8 before:bg-gradient-to-t before:from-background before:to-transparent sm:px-6">
           <PromptInput
             onSubmit={({ text }) => void send(text)}
             className="[&_[data-slot=input-group]]:rounded-2xl [&_[data-slot=input-group]]:bg-card [&_[data-slot=input-group]]:shadow-sm"
