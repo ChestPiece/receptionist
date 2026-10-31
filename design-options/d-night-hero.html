@@ -21,7 +21,7 @@
   --radius: 0.75rem;
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --font-sans: "Geist", "Readex Pro", system-ui, sans-serif;
-  --text-display: clamp(2.5rem, 1.9rem + 2.6vw, 4.25rem);
+  --text-display: clamp(2.125rem, 1.4rem + 2.6vw, 3.5rem);
   --text-h2: clamp(1.875rem, 1.5rem + 1.6vw, 2.875rem);
   --text-lead: clamp(1.0625rem, 1rem + 0.3vw, 1.25rem);
   --section: clamp(4.5rem, 3rem + 6vw, 8rem);
@@ -84,7 +84,7 @@ button { font: inherit; color: inherit; }
 @media (min-width: 640px) { .short { display: none; } .long { display: inline; } }
 
 /* Hero */
-.hero { position: relative; isolation: isolate; overflow: clip; padding-top: 5.5rem; }
+.hero { --horizon-y: 90%; position: relative; isolation: isolate; overflow: clip; padding-top: 7rem; }
 .waves { position: absolute; inset: 0; z-index: -2; }
 /* Quiet zone: the waves drop to 22% under the copy so the lead text keeps its contrast. */
 .waves { mask-image: linear-gradient(to bottom, rgb(0 0 0 / 0.22) 0 45%, #000 75%); }
@@ -98,33 +98,41 @@ button { font: inherit; color: inherit; }
 .horizon .planet { background: var(--night); }
 .horizon .rim { box-shadow: 0 -1px 0 0 var(--night-foreground), 0 -1px 6px 1px var(--night-accent), 0 -8px 40px 2px color-mix(in oklab, var(--night-accent) 70%, transparent), 0 -40px 140px 10px color-mix(in oklab, var(--night-accent) 35%, transparent);
   mask-image: linear-gradient(to right, transparent 36%, #000 47%, #000 53%, transparent 64%); }
-.hero-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 3rem; align-items: center; padding-bottom: 6rem; }
+.hero-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 3.5rem; align-items: center; padding-bottom: 8rem; }
 @media (min-width: 1024px) {
-  .hero { min-height: min(100svh, 60rem); display: flex; align-items: center; padding-top: 4.5rem; }
-  .hero-grid { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 4rem; padding-bottom: 7rem; }
+  .hero { --horizon-y: 86%; min-height: min(100svh, 56rem); display: flex; align-items: center; padding-top: 6rem; }
+  .hero-grid { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 4.5rem; padding-bottom: 9rem; }
 }
 .pill { display: inline-flex; align-items: center; gap: 0.5rem; border: 1px solid var(--border); border-radius: 999px; padding: 0.25rem 0.75rem; font-size: 0.75rem; color: var(--muted-foreground); background: color-mix(in oklab, var(--night) 70%, transparent); }
 .pill i { width: 0.375rem; height: 0.375rem; border-radius: 50%; background: var(--primary); }
-.hero h1 { margin-top: 1.5rem; max-width: 15ch; font-size: var(--text-display); line-height: 1.02; font-weight: 600; letter-spacing: -0.035em; text-wrap: balance; overflow-wrap: anywhere; }
-.hero .lead { margin-top: 1.5rem; max-width: 44ch; font-size: var(--text-lead); line-height: 1.55; color: var(--muted-foreground); text-wrap: pretty; }
+.hero h1 { margin-top: 1.25rem; font-size: var(--text-display); line-height: 1.02; font-weight: 600; letter-spacing: -0.035em; text-wrap: balance; overflow-wrap: anywhere; }
+.hero h1 span { display: block; }
+.hero .lead { margin-top: 1.25rem; max-width: 42ch; font-size: var(--text-lead); line-height: 1.55; color: var(--muted-foreground); text-wrap: pretty; }
 .hero .ctas { margin-top: 2rem; display: flex; flex-wrap: wrap; gap: 0.75rem; }
+/* Phones: both actions go full width so they share one edge instead of two ragged widths. */
+.hero .ctas .btn { flex: 1 1 11rem; }
+@media (min-width: 640px) { .hero .ctas .btn { flex: none; } }
 
 /* Hero conversation (static frame of the live replay) */
 .convo { width: 100%; max-width: 26rem; margin-inline: auto; position: relative; }
-.convo-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; }
+.convo-controls { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin-top: 0.75rem; }
 .seg { display: inline-flex; padding: 2px; border: 1px solid var(--border); border-radius: 999px; font-size: 0.75rem; background: color-mix(in oklab, var(--night) 70%, transparent); }
 .seg button { border: 0; background: none; padding: 0.375rem 0.875rem; border-radius: 999px; font-weight: 500; color: var(--muted-foreground); cursor: pointer; }
 .seg button[aria-pressed="true"] { background: var(--foreground); color: var(--night); }
-.replay { border: 0; background: none; font-size: 0.75rem; color: var(--muted-foreground); padding: 0.375rem 0.625rem; border-radius: 999px; cursor: pointer; }
-.replay:hover { color: var(--foreground); }
-.shell { display: flex; flex-direction: column; height: clamp(24rem, 58svh, 30rem); border-radius: 1.35rem; overflow: hidden; background: var(--card); border: 1px solid var(--border);
+.replay { display: inline-flex; align-items: center; gap: 0.375rem; border: 1px solid var(--border); background: none; font-size: 0.75rem; font-weight: 500; color: var(--muted-foreground); height: 2rem; padding-inline: 0.75rem; border-radius: 999px; cursor: pointer;
+  transition-property: color, background-color; transition-duration: 150ms; transition-timing-function: var(--ease-out); }
+.replay svg { width: 0.875rem; height: 0.875rem; }
+.replay:hover { color: var(--foreground); background: color-mix(in oklab, var(--foreground) 7%, transparent); }
+.seg button, .replay { min-height: 2rem; }
+.seg button:focus-visible, .replay:focus-visible, .btn:focus-visible, a:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.shell { display: flex; flex-direction: column; border-radius: 1.35rem; overflow: hidden; background: var(--card); border: 1px solid var(--border);
   box-shadow: 0 0 0 1px color-mix(in oklab, var(--night-accent) 18%, transparent), 0 30px 80px -30px color-mix(in oklab, var(--night-accent) 45%, transparent); }
 .shell-head { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); }
 .avatar { width: 2rem; height: 2rem; border-radius: 50%; display: grid; place-items: center; background: var(--primary); color: var(--primary-foreground); font-size: 0.875rem; font-weight: 600; }
 .who { line-height: 1.2; } .who b { display: block; font-size: 0.875rem; font-weight: 500; } .who span { font-size: 0.75rem; color: var(--muted-foreground); }
 .clock { margin-inline-start: auto; font-size: 0.75rem; color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
-.msgs { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: flex-end; gap: 0.75rem; padding: 1rem; font-size: 0.875rem; line-height: 1.45;
-  mask-image: linear-gradient(to bottom, transparent, #000 40px); }
+/* Height follows the finished conversation, so the card has no dead space above the first message. */
+.msgs { display: flex; flex-direction: column; gap: 0.75rem; padding: 1rem; font-size: 0.875rem; line-height: 1.45; }
 .me { align-self: flex-end; max-width: 85%; background: var(--primary); color: var(--primary-foreground); padding: 0.5rem 0.875rem; border-radius: 1.1rem 1.1rem 0.35rem 1.1rem; }
 .sara { max-width: 90%; }
 .slots { display: flex; gap: 0.5rem; margin-top: 0.5rem; font-size: 0.8125rem; font-weight: 500; font-variant-numeric: tabular-nums; }
@@ -133,7 +141,7 @@ button { font: inherit; color: inherit; }
 .booked { border: 1px solid var(--border); border-radius: 0.75rem; padding: 0.75rem 0.875rem; display: grid; gap: 0.15rem; font-size: 0.8125rem; }
 .booked b { font-weight: 600; display: flex; align-items: center; gap: 0.4rem; } .booked b svg { width: 0.875rem; height: 0.875rem; color: var(--primary); }
 .booked span { color: var(--muted-foreground); }
-.convo figcaption { margin-top: 0.75rem; text-align: center; font-size: 0.75rem; color: var(--muted-foreground); }
+.convo figcaption { margin-top: 0.5rem; text-align: start; font-size: 0.75rem; color: var(--muted-foreground); }
 
 /* Night-to-morning bridge. Background walks from --night to --background with scroll (--p, 0 to 1). */
 /* --q is the morning ramp: night holds until 70% progress, then warms by 95%, in step with frames 65-84. A linear mix would sit in mud-grey mid-scroll. */
@@ -209,19 +217,15 @@ button { font: inherit; color: inherit; }
   <div class="container hero-grid">
     <div>
       <p class="pill"><i></i> For dental clinics in the UAE</p>
-      <h1 id="hero-title">Closed for the night. Still taking bookings.</h1>
-      <p class="lead">Sara, your clinic's AI receptionist, answers on WhatsApp and your website in English and <span dir="rtl" lang="ar">عربي</span>. She books, moves and cancels visits while the front desk is dark.</p>
+      <h1 id="hero-title"><span>Closed for the night.</span> <span>Still taking bookings.</span></h1>
+      <p class="lead">Sara is your clinic's AI receptionist on WhatsApp and your website. She books, moves and cancels visits in English and Arabic while the front desk is dark.</p>
       <div class="ctas">
-        <a class="btn btn-primary" href="#demo">Try the demo chat
+        <a class="btn btn-primary" href="#demo">Try the demo
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
         <a class="btn btn-ghost" href="#how">See how it works</a>
       </div>
     </div>
     <figure class="convo">
-      <div class="convo-top">
-        <div class="seg" role="group" aria-label="Demo language"><button type="button" aria-pressed="true">English</button><button type="button" aria-pressed="false" lang="ar">عربي</button></div>
-        <button class="replay" type="button">Replay</button>
-      </div>
       <div class="shell screen">
         <div class="shell-head">
           <div class="avatar" aria-hidden="true">S</div>
@@ -237,7 +241,11 @@ button { font: inherit; color: inherit; }
           <div class="booked"><b><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>Booked: Cleaning &amp; polish</b><span>Thu 29 Oct, 6:30 pm</span><span>Sample Smile Dental, Jumeirah</span></div>
         </div>
       </div>
-      <figcaption>Replay of a real booking flow on a sample clinic.</figcaption>
+      <div class="convo-controls">
+        <div class="seg" role="group" aria-label="Demo language"><button type="button" aria-pressed="true">English</button><button type="button" aria-pressed="false" lang="ar">عربي</button></div>
+        <button class="replay" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>Replay</button>
+      </div>
+      <figcaption>A replay of a booking on a sample clinic.</figcaption>
     </figure>
   </div>
 </section>

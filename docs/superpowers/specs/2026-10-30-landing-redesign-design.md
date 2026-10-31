@@ -41,10 +41,11 @@ Taken from them: dark surfaces work when one bright object carries the fold and 
 
 ### 1. Hero (night)
 Layout keeps today's split (copy left, live replay right) because the replay is the proof and must stay in the first viewport.
-- Desktop (≥1024 px): `min-h-[min(100svh,60rem)]`, grid `minmax(0,1.1fr) minmax(0,1fr)`, gap 4rem, content vertically centred, 7rem bottom padding so the horizon sits under the chat.
+- Desktop (≥1024 px): `min-h-[min(100svh,56rem)]`, `pt-24`, grid `minmax(0,1.25fr) minmax(0,1fr)`, gap 4.5rem, content vertically centred, 9rem bottom padding so the horizon (`--horizon-y: 86%`) runs under the chat controls, never through the caption.
+- Revised 2026-10-31 after review (better-layout / better-writing / better-interface): the H1 is two sentences, one per line (`<span class="block">`), at `text-display` = `clamp(2.125rem, 1.4rem + 2.6vw, 3.5rem)` so each sentence fits the copy column on one line; the old 15ch cap broke it into three ragged lines. The chat shell no longer has a fixed height: it is as tall as the finished conversation, so there is no dead space above the first message. The live replay reserves that height (render the final state invisibly once, or set `min-height` from it) so the card does not grow while messages arrive.
 - Layers, back to front: `--night` fill, PatternWaves canvas, glow horizon (air glow, planet body, rim), content.
 - Copy column: audience pill, H1, lead, two buttons.
-- Replay column: the existing `HeroConversation` (EN/عربي toggle, Replay, `ChatShell`, caption). The chat shell is a **lit screen**: it uses the light card tokens in both themes (`.screen` scope, see §6), plus a sage halo (`0 0 0 1px night-accent/18%`, `0 30px 80px -30px night-accent/45%`). This is the one shadow above `shadow-sm` the amendment allows, night surfaces only.
+- Replay column: the existing `HeroConversation` (`ChatShell`, then a controls row under the card with the EN/عربي toggle at the start and an outlined Replay button with an icon at the end, then a start-aligned caption). The controls moved under the card so the card top lines up with the copy column instead of a toggle row floating above it. The chat shell is a **lit screen**: it uses the light card tokens in both themes (`.screen` scope, see §6), plus a sage halo (`0 0 0 1px night-accent/18%`, `0 30px 80px -30px night-accent/45%`). This is the one shadow above `shadow-sm` the amendment allows, night surfaces only.
 - The quiet zone: the waves canvas is masked to 22% strength under the copy (`mask-image` to-right on desktop, to-bottom on phones) so the lead text keeps contrast. No scrim colour, only a mask.
 
 ### 2. Night-to-morning bridge (new)
@@ -79,11 +80,11 @@ Unchanged. It is the reference light section in the mockup.
 
 Hero
 - Pill: `For dental clinics in the UAE` (unchanged).
-- H1: **`Closed for the night. Still taking bookings.`** (44 chars, fits `text-display`, `max-w-[15ch]`).
-- Lead: `Sara, your clinic's AI receptionist, answers on WhatsApp and your website in English and عربي. She books, moves and cancels visits while the front desk is dark.`
+- H1: **`Closed for the night. Still taking bookings.`** (two lines, one sentence each).
+- Lead: `Sara is your clinic's AI receptionist on WhatsApp and your website. She books, moves and cancels visits in English and Arabic while the front desk is dark.` (Shorter subject; "Arabic" in Latin script inside the English sentence, because an inline عربي followed by a full stop reorders under the bidi algorithm. The toggle keeps the عربي label.)
   - After the rename, if the product name should appear above the fold: `{{PRODUCT}} gives your clinic Sara, an AI receptionist who answers on WhatsApp and your website in English and عربي. …` (Decision 4.)
-- Buttons: `Try the demo chat` (primary), `See how it works` (outline, night border).
-- Caption under the chat: unchanged.
+- Buttons: `Try the demo` (primary, same label as the nav button), `See how it works` (outline, night border). On phones both go full width (`flex-1 basis-44`) so they share one edge.
+- Caption under the chat: `A replay of a booking on a sample clinic.`
 
 Bridge captions (live text, `text-h2` semibold, time as a small line above)
 - Night: `2:14 am` / `A patient asks for Thursday. Sara answers.`
@@ -179,7 +180,7 @@ Removed: nothing new is added beyond the waves, horizon fade and bridge scrub.
 ## 8. Phone layout (375 px)
 
 - Nav: logo, Sign in, `Demo` button (as today). Night variant over the hero.
-- Hero: one column. Pill, H1 at the `text-display` floor (2.5 rem, wraps to 3–4 lines), lead, buttons wrap (both stay single-line), then the chat (`h-[clamp(24rem,58svh,30rem)]`). The horizon sits at 88% so it cuts under the chat, not through it. Waves quiet zone is the top 45% (to-bottom mask). `interactive` off.
+- Hero: one column, `pt-28` so the pill clears the floating nav by 2.5rem. Pill, H1 at the `text-display` floor (2.125 rem; each sentence fits one line at 375 px), lead, both buttons full width, then the chat (natural height) and its controls row. The horizon sits at 90% so it cuts under the chat, not through it. Waves quiet zone is the top 45% (to-bottom mask). `interactive` off.
 - Bridge: same 16:10 frame, full width (≈234 px tall), `sm` frames (800×500). Captions drop to `text-2xl` and sit **below** the frame, not over it (the frame is too short to hold text).
 - NightShift: existing phone behaviour (no pin, timed play).
 - Close band: centred, buttons stacked full width.
