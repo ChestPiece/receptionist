@@ -8,7 +8,6 @@ import { ArrowRightIcon, CheckIcon, RotateCcwIcon } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { BookedCard, Bubble, EASE_OUT, PatientBubble, SlotPicker, TypingDots } from "@/components/chat-cards";
-import { FrameSequence } from "@/components/frame-sequence";
 import { ROW, WeekCalendar, type Block } from "@/components/ledger";
 import { Logo } from "@/components/logo";
 import type { PatternWavesProps } from "@/components/pattern-waves";
@@ -173,6 +172,7 @@ export function Horizon() {
 }
 
 const PatternWaves = dynamic(() => import("@/components/pattern-waves"), { ssr: false });
+const FrameSequence = dynamic(() => import("@/components/frame-sequence").then((m) => m.FrameSequence), { ssr: false });
 
 // WebGL dots on a night surface, loaded after first paint ("idle") or near the viewport ("near"), so ogl stays out of
 // the first-load bundle. Reduced motion and no WebGL2 leave the plain night surface and the horizon.
