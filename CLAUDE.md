@@ -67,19 +67,20 @@ npm run lint
 - Auth: `@supabase/ssr`, `src/proxy.ts` guards `/dashboard`, `/login` (password or magic link, no sign-up). Needs `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in `.env.local` and Vercel.
 - Pages read with the user's client (RLS). Helpers in `src/lib/dashboard.ts`, server actions in `src/app/dashboard/actions.ts`. Clinic switcher (cookie) when a user has several clinics.
   - Today: tallies (booked by Sara this week, after hours, need staff), first waiting chat, this week's book.
-  - Inbox: chats from `messages`, Needs staff filter (`stillPaused`), Take over / Hand back, staff reply on WhatsApp (sent with the clinic's creds via the service role, logged as role `staff`, appended to the agent history). Website chats are read-only.
+  - Inbox: one row per chat from the `inbox_list` RPC (`0006_speed.sql`, security invoker), the picked thread loads alongside; Needs staff filter (`stillPaused`), Take over / Hand back, staff reply on WhatsApp (sent with the clinic's creds via the service role, logged as role `staff`, appended to the agent history). Website chats are read-only.
   - Calendar: Saturday-start week, blocks by channel (red = chat waiting for staff), mark came in / no-show / cancel.
   - Patients: search + tags, profile with details, staff notes, visits, transcript.
-- `Live` re-renders pages on Realtime changes. Not yet: manual booking or moving visits from the dashboard, live replies into web chats.
+- Every dashboard route has a `loading.tsx` skeleton; the sidebar is static and the clinic switcher and Needs staff badge stream in behind Suspense.
+- `Live` re-renders pages on Realtime changes to this clinic's messages and appointments, debounced to 1 s (no conversations subscription: a pause flip by another staff member shows on the next event). Not yet: manual booking or moving visits from the dashboard, live replies into web chats.
 
 ## How `handleMessage` works (`src/lib/agent.ts`)
 1. Dedupe insert (`processed_messages`, with `patient_wa`) and clinic load (cached 5 min) in parallel.
-2. Rate limit: more than 20 messages from one sender in 10 min gets one "slow down" reply, then silence (emergencies still get the fixed reply). Then `markRead` (blue ticks; UltraMsg has no typing indicator).
+2. Rate-limit count and patient upsert run in parallel. More than 20 messages from one sender in 10 min gets one "slow down" reply, then silence (emergencies still get the fixed reply). Then `markRead` (blue ticks; UltraMsg has no typing indicator).
 3. Input caps: text cut to 1,500 chars; voice notes only from public https URLs and under 3 MB.
 4. Emergency (`safety.ts`, deterministic EN/AR regex): fixed 998 reply, appended to history, model does not run. Works even when the chat is paused.
-5. Debounce 1.5 s, in the DB so it works across Vercel instances: each piece's text goes in `processed_messages.body`; only the newest piece (`seq`) runs the model and answers every unanswered piece from the last 5 min. If a newer piece arrives while the model runs, the older reply is dropped, unless the older run wrote data (`wroteData`: book, cancel, reschedule, handoff).
+5. Debounce 1.5 s, in the DB so it works across Vercel instances: each piece's text goes in `processed_messages.body`; after the wait, the newest-piece check, the unanswered pieces and the history load run in parallel. Only the newest piece (`seq`) runs the model (a history load error surfaces only there) and answers every unanswered piece from the last 5 min. If a newer piece arrives while the model runs, the older reply is dropped, unless the older run wrote data (`wroteData`: book, cancel, reschedule, handoff).
 6. Paused chat (`stillPaused`): staff own it; the patient's messages are still saved to history; the pause lapses after 30 min.
-7. Run the agent, send `tidy(reply)` (no en/em dashes), log `[timing]`, then append this run's turns to the latest saved history (`mergeHistory`) and keep the last 10 turns.
+7. Run the agent (the prompt's static rules and clinic info come first, today's date and the patient line last, so OpenAI can cache the prefix). `logUsage` runs alongside the newest-piece recheck. Send `tidy(reply)` (no en/em dashes) first; after the send, log the transcript (`[log]` on failure, no second reply), log `[timing]`, then append this run's turns to the latest saved history (`mergeHistory`) and keep the last 10 turns.
 
 ## Outbound jobs (`src/lib/jobs.ts`, `POST /api/cron?secret=CRON_SECRET`)
 - pg_cron + pg_net call the cron route every 15 min (job `clinic-jobs`, live since 2026-10-22). The schedule SQL is at the bottom of `0003_revenue.sql`. Check runs in the Vercel logs (`[cron]` lines) or in `cron.job_run_details`.

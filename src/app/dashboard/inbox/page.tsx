@@ -21,7 +21,8 @@ export default async function Inbox({ searchParams }: PageProps<"/dashboard/inbo
 
   const threadOf = (id: string) => sb.from("messages").select("id, patient_id, channel, role, body, created_at").eq("patient_id", id).order("id", { ascending: false }).limit(200);
   // One row per patient, newest first (inbox_list, RLS applies). When a chat is picked, its thread loads alongside.
-  const [{ data: rows }, picked] = await Promise.all([sb.rpc("inbox_list", { clinic: clinic.id }), p ? threadOf(p) : null]);
+  const [{ data: rows, error }, picked] = await Promise.all([sb.rpc("inbox_list", { clinic: clinic.id }), p ? threadOf(p) : null]);
+  if (error) throw error; // an empty inbox must never hide a failed load (e.g. 0006 not applied)
   const all = (rows ?? []) as Row[];
   const latest = new Map(all.map((r) => [r.patient_id, r]));
   const person = new Map<string, Person>(all.map((r) => [r.patient_id, { id: r.patient_id, name: r.name, phone: r.phone, wa_id: r.wa_id }]));

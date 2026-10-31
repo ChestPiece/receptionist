@@ -15,3 +15,5 @@ test("script text is escaped, not rendered", () => {
   expect(out).not.toContain("<script>");
   expect(out).toContain("&lt;script&gt;");
 });
+test("trailing punctuation stays outside the link", () =>
+  expect(html("map: https://x.com/a.")).toContain('<a href="https://x.com/a" target="_blank" rel="noopener noreferrer" class="underline underline-offset-2">https://x.com/a</a>.'));
