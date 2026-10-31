@@ -1,0 +1,11 @@
+{
+  "name": "night-to-morning",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npx --yes hyperframes@0.8.181 preview",
+    "check": "npx --yes hyperframes@0.8.181 check",
+    "render": "npx --yes hyperframes@0.8.181 render --format png-sequence -o renders/png",
+    "frames": "npm run render && node ../../scripts/frames-to-webp.mjs renders/png ../../public/frames/night"
+  }
+}
