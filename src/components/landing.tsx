@@ -1,13 +1,17 @@
 "use client";
 
-// Client pieces of the landing page: nav, hero demo (English / Arabic), the pinned "night shift" story and scroll reveals.
+// Client pieces of the landing page: nav, night hero with its demo (English / Arabic), the night-to-morning bridge,
+// the pinned "night shift" story, the WebGL waves and scroll reveals.
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { ArrowRightIcon, CheckIcon, RotateCcwIcon } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { BookedCard, Bubble, EASE_OUT, PatientBubble, SlotPicker, TypingDots } from "@/components/chat-cards";
+import { FrameSequence } from "@/components/frame-sequence";
 import { ROW, WeekCalendar, type Block } from "@/components/ledger";
 import { Logo } from "@/components/logo";
+import type { PatternWavesProps } from "@/components/pattern-waves";
 import { Button } from "@/components/ui/button";
 import { Flip, gsap, ScrollTrigger, SplitText, useGSAP } from "@/lib/gsap";
 import { cn } from "@/lib/utils";
@@ -25,6 +29,20 @@ const LINKS = [
 
 export function Nav({ demo }: { demo: string }) {
   const [active, setActive] = useState("");
+  const [night, setNight] = useState(true);
+  useEffect(() => {
+    // Night variant while the nav sits over a night surface (a thin strip at the top of the viewport).
+    const over = new Set<Element>();
+    const io = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((e) => (e.isIntersecting ? over.add(e.target) : over.delete(e.target)));
+        setNight(over.size > 0);
+      },
+      { rootMargin: "0px 0px -94% 0px" },
+    );
+    document.querySelectorAll("[data-night]").forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, []);
   useEffect(() => {
     // The link of the section crossing the middle of the screen lights up.
     const io = new IntersectionObserver(
@@ -39,8 +57,8 @@ export function Nav({ demo }: { demo: string }) {
   }, []);
 
   return (
-    <header className="sticky top-0 z-30 px-4 pt-3 sm:px-6">
-      <div className="mx-auto flex h-14 max-w-6xl items-center justify-between rounded-2xl border bg-card/80 ps-4 pe-2 shadow-sm backdrop-blur-md">
+    <header className={cn("fixed inset-x-0 top-0 z-30 bg-transparent px-4 pt-3 sm:px-6", night && "night")}>
+      <div className="mx-auto flex h-14 max-w-6xl items-center justify-between rounded-2xl border bg-card/80 ps-4 pe-2 shadow-sm backdrop-blur-md transition-[background-color,border-color] duration-200">
         <Link href="/" aria-label="Front Desk home">
           <Logo />
         </Link>
@@ -93,37 +111,124 @@ export function Hero({ demo }: { demo: string }) {
   );
 
   return (
-    <div
-      ref={root}
-      data-hero
-      style={{ visibility: "hidden" }}
-      className="mx-auto grid w-full max-w-6xl grid-cols-1 items-center gap-12 px-4 pb-16 pt-10 sm:px-6 lg:min-h-[min(calc(100svh-4.25rem),52rem)] lg:grid-cols-[1.15fr_1fr] lg:gap-16 lg:py-10"
-    >
-      <div>
-        <p data-hero-in className="inline-flex items-center gap-2 rounded-full border bg-card px-3 py-1 text-xs text-muted-foreground">
-          <span className="size-1.5 rounded-full bg-success" /> For dental clinics in the UAE
-        </p>
-        <h1 data-hero-title className="mt-6 max-w-[19ch] text-display font-semibold tracking-[-0.035em] text-balance">
-          An AI receptionist that books patients around the clock.
-        </h1>
-        <p data-hero-in className="mt-6 max-w-[46ch] text-lead text-pretty text-muted-foreground">
-          Sara answers on WhatsApp and your website, in English and <span dir="rtl">عربي</span>. She books, moves and cancels visits, and sends the reminders.
-        </p>
-        <div data-hero-in className="mt-8 flex flex-wrap gap-3">
-          <Button asChild size="lg">
-            <Link href={demo}>
-              Try the demo chat <ArrowRightIcon className="size-4" />
-            </Link>
-          </Button>
-          <Button asChild size="lg" variant="outline" className="bg-card">
-            <a href="#how">See how it works</a>
-          </Button>
+    <section data-night aria-labelledby="hero-title" className="night relative isolate overflow-clip [--horizon-y:90%] lg:flex lg:min-h-[min(100svh,56rem)] lg:items-center lg:[--horizon-y:86%]">
+      {/* Quiet zone: the waves drop to 22% under the copy so the lead keeps its contrast. */}
+      <NightWaves
+        when="idle"
+        spacing={10}
+        opacity={0.65}
+        speed={0.25}
+        direction={20}
+        fade="edges"
+        fadeSize={0.9}
+        cursorSize={60}
+        cursorStrength={0.5}
+        className="absolute inset-0 -z-20 [mask-image:linear-gradient(to_bottom,rgb(0_0_0/0.22)_0_45%,#000_75%)] lg:[mask-image:linear-gradient(to_right,rgb(0_0_0/0.22)_0_30%,#000_62%)]"
+      />
+      <Horizon />
+      <div
+        ref={root}
+        data-hero
+        style={{ visibility: "hidden" }}
+        className="mx-auto grid w-full max-w-6xl grid-cols-1 items-center gap-14 px-4 pt-28 pb-32 sm:px-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] lg:gap-18 lg:pt-24 lg:pb-36"
+      >
+        <div>
+          <p data-hero-in className="inline-flex items-center gap-2 rounded-full border bg-card px-3 py-1 text-xs text-muted-foreground">
+            <span className="size-1.5 rounded-full bg-success" /> For dental clinics in the UAE
+          </p>
+          <h1 id="hero-title" data-hero-title className="mt-5 text-display font-semibold tracking-[-0.035em]">
+            <span className="block">Closed for the night.</span> <span className="block">Still taking bookings.</span>
+          </h1>
+          <p data-hero-in className="mt-5 max-w-[42ch] text-lead text-pretty text-muted-foreground">
+            Sara is your clinic&apos;s AI receptionist on WhatsApp and your website. She books, moves and cancels visits in English and Arabic while the front desk is dark.
+          </p>
+          <div data-hero-in className="mt-8 flex flex-wrap gap-3">
+            <Button asChild size="lg" className="max-sm:flex-1 max-sm:basis-44">
+              <Link href={demo}>
+                Try the demo <ArrowRightIcon className="size-4" />
+              </Link>
+            </Button>
+            <Button asChild size="lg" variant="outline" className="bg-transparent max-sm:flex-1 max-sm:basis-44">
+              <a href="#how">See how it works</a>
+            </Button>
+          </div>
+        </div>
+        <div data-hero-in>
+          <HeroConversation />
         </div>
       </div>
-      <div data-hero-in>
-        <HeroConversation />
-      </div>
+    </section>
+  );
+}
+
+// The glow horizon: air glow, planet body (hides the waves below the curve) and the sage rim. Night surfaces only.
+export function Horizon() {
+  return (
+    <div aria-hidden className="horizon">
+      <div className="horizon-air" />
+      <div className="horizon-planet" />
+      <div className="horizon-rim" />
     </div>
+  );
+}
+
+const PatternWaves = dynamic(() => import("@/components/pattern-waves"), { ssr: false });
+
+// WebGL dots on a night surface, loaded after first paint ("idle") or near the viewport ("near"), so ogl stays out of
+// the first-load bundle. Reduced motion and no WebGL2 leave the plain night surface and the horizon.
+export function NightWaves({ when, className, ...props }: PatternWavesProps & { when: "idle" | "near" }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [on, setOn] = useState<{ color: string; fine: boolean } | null>(null);
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const show = () =>
+      setOn({ color: getComputedStyle(document.documentElement).getPropertyValue("--night-accent").trim(), fine: window.matchMedia("(pointer: fine)").matches });
+    if (when === "idle") {
+      if ("requestIdleCallback" in window) {
+        const id = window.requestIdleCallback(show, { timeout: 1500 });
+        return () => window.cancelIdleCallback(id);
+      }
+      const id = setTimeout(show, 300);
+      return () => clearTimeout(id);
+    }
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((e) => e.isIntersecting)) return;
+        io.disconnect();
+        show();
+      },
+      { rootMargin: "100% 0px" },
+    );
+    if (ref.current) io.observe(ref.current);
+    return () => io.disconnect();
+  }, [when]);
+  return (
+    <div ref={ref} aria-hidden className={className}>
+      {on && <PatternWaves preset="silk" backgroundColor="transparent" {...props} color={on.color} interactive={(props.interactive ?? true) && on.fine} className="size-full" />}
+    </div>
+  );
+}
+
+// Night to morning: a pre-rendered shot scrubbed by scroll, no pin. The section background follows the same progress.
+export function Bridge() {
+  const root = useRef<HTMLElement>(null);
+  const onProgress = useCallback((p: number) => root.current?.style.setProperty("--p", p.toFixed(3)), []);
+  return (
+    <section ref={root} aria-label="From night to morning" className="bridge relative pb-[calc(var(--spacing-section)*0.5)]">
+      <div className="bridge-frame relative mx-auto aspect-[16/10] max-h-[88svh] w-full max-w-[90rem]">
+        <FrameSequence base="/frames/night" count={90} smCount={45} start="top bottom" end="bottom bottom" onProgress={onProgress} className="size-full" />
+      </div>
+      <div className="mx-auto mt-6 w-full max-w-6xl px-4 sm:px-6 md:absolute md:inset-x-0 md:bottom-[calc(var(--spacing-section)*0.5+8%)] md:mt-0">
+        <div className="grid min-h-28 items-end md:min-h-0">
+          <p className="bridge-c1 col-start-1 row-start-1 max-w-[22ch] text-h2 font-semibold tracking-[-0.03em] text-balance">
+            <small className="mb-2 block text-[15px] font-medium tracking-normal tabular-nums">2:14 am</small>A patient asks for Thursday. Sara answers.
+          </p>
+          <p className="bridge-c2 col-start-1 row-start-1 max-w-[22ch] text-h2 font-semibold tracking-[-0.03em] text-balance">
+            <small className="mb-2 block text-[15px] font-medium tracking-normal tabular-nums text-muted-foreground">9:00 am</small>Your team opens up to a full book.
+          </p>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -178,7 +283,15 @@ function HeroConversation() {
   const [run, setRun] = useState(0);
   return (
     <figure className="mx-auto w-full max-w-[26rem]">
-      <div className="mb-3 flex items-center justify-between gap-3">
+      <ChatShell
+        key={run}
+        time="23:40"
+        dir={lang === "ar" ? "rtl" : undefined}
+        className="screen h-[clamp(24rem,calc(100svh-17rem),32rem)] rounded-[1.35rem] shadow-[0_0_0_1px_color-mix(in_oklab,var(--night-accent)_18%,transparent),0_30px_80px_-30px_color-mix(in_oklab,var(--night-accent)_45%,transparent)]"
+      >
+        <Replay lang={lang} />
+      </ChatShell>
+      <div className="mt-3 flex items-center justify-between gap-3">
         <div role="group" aria-label="Demo language" className="inline-flex rounded-full border bg-card p-0.5 text-xs">
           {(["en", "ar"] as const).map((l) => (
             <button
@@ -189,20 +302,17 @@ function HeroConversation() {
                 setLang(l);
                 setRun((r) => r + 1);
               }}
-              className={cn("rounded-full px-3.5 py-1.5 font-medium transition-colors", lang === l ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground")}
+              className={cn("h-7 rounded-full px-3.5 font-medium transition-colors", lang === l ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground")}
             >
               {l === "en" ? "English" : <span lang="ar">عربي</span>}
             </button>
           ))}
         </div>
-        <button type="button" onClick={() => setRun((r) => r + 1)} className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+        <button type="button" onClick={() => setRun((r) => r + 1)} className="inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
           <RotateCcwIcon className="size-3.5" /> Replay
         </button>
       </div>
-      <ChatShell key={run} time="23:40" dir={lang === "ar" ? "rtl" : undefined} className="h-[clamp(24rem,58svh,30rem)]">
-        <Replay lang={lang} />
-      </ChatShell>
-      <figcaption className="mt-3 text-center text-xs text-muted-foreground">Replay of a real booking flow on a sample clinic.</figcaption>
+      <figcaption className="mt-2 text-xs text-muted-foreground">A replay of a booking on a sample clinic.</figcaption>
     </figure>
   );
 }
@@ -369,7 +479,7 @@ export function NightShift({ heading }: { heading: ReactNode }) {
 
   const current = STEP_OF[step];
   return (
-    <section id="how" ref={root} className="border-t">
+    <section id="how" ref={root}>
       <div ref={pin} className="py-section lg:flex lg:h-svh lg:items-center lg:py-0 lg:pt-20">
         <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-10 px-4 sm:px-6 lg:grid-cols-[21rem_1fr] lg:items-center lg:gap-12">
           <div>

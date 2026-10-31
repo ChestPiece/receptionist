@@ -13,8 +13,9 @@ const frameUrl = (base: string, set: string, i: number) => `${base}/${set}/${Str
 
 // Plays a pre-rendered WebP sequence (`${base}/lg/0001.webp`, `${base}/sm/0001.webp`) on a canvas, scrubbed by scroll.
 // The scrub runs while the canvas's parent scrolls through the viewport (top hits top to bottom hits bottom),
-// so put the canvas in a tall wrapper and make it sticky.
-export function FrameSequence({ base, count, smCount, className }: { base: string; count: number; smCount: number; className?: string }) {
+// so put the canvas in a tall wrapper and make it sticky. `start`, `end` and `onProgress` override that window and report progress.
+type Props = { base: string; count: number; smCount: number; className?: string; start?: string; end?: string; onProgress?: (p: number) => void };
+export function FrameSequence({ base, count, smCount, className, start = "top top", end = "bottom bottom", onProgress }: Props) {
   const ref = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -65,7 +66,10 @@ export function FrameSequence({ base, count, smCount, className }: { base: strin
 
     const resize = new ResizeObserver(draw);
     resize.observe(canvas);
-    if (reduced) return () => resize.disconnect();
+    if (reduced) {
+      onProgress?.(1);
+      return () => resize.disconnect();
+    }
 
     // Fetch the rest only once the canvas is within about one viewport.
     const near = new IntersectionObserver(
@@ -82,8 +86,9 @@ export function FrameSequence({ base, count, smCount, className }: { base: strin
     const tween = gsap.to(state, {
       p: 1,
       ease: "none",
-      scrollTrigger: { trigger: canvas.parentElement ?? canvas, start: "top top", end: "bottom bottom", scrub: 0.4 },
+      scrollTrigger: { trigger: canvas.parentElement ?? canvas, start, end, scrub: 0.4 },
       onUpdate: () => {
+        onProgress?.(state.p);
         const next = frameAt(state.p, n);
         if (next === current) return;
         current = next;
@@ -98,7 +103,7 @@ export function FrameSequence({ base, count, smCount, className }: { base: strin
       resize.disconnect();
       for (const img of frames) if (img) img.onload = null;
     };
-  }, [base, count, smCount]);
+  }, [base, count, smCount, start, end, onProgress]);
 
   return <canvas ref={ref} className={className} aria-hidden="true" />;
 }
