@@ -288,12 +288,13 @@
 }
 
 /* Night-to-morning bridge. --p is scroll progress (0 to 1), set by the frame sequence.
-   --q is the morning ramp: night holds until 70%, then warms by 95%, in step with frames 65-84. A linear mix sits in mud-grey mid-scroll. */
-.bridge { --p: 0; --q: clamp(0, (var(--p) - 0.7) * 4, 1); background-color: color-mix(in oklab, var(--night) calc((1 - var(--q)) * 100%), var(--background)); }
+   --q is the background ramp, in the last 10% only: the scrub ends as the section top reaches the viewport top, so the night
+   hero above has just left and never sits on a lightened bridge. --d dims the bright morning frames in the dark theme, earlier. */
+.bridge { --p: 0; --q: clamp(0, (var(--p) - 0.9) * 10, 1); --d: clamp(0, (var(--p) - 0.7) * 4, 1); background-color: color-mix(in oklab, var(--night) calc((1 - var(--q)) * 100%), var(--background)); }
 .bridge-frame { mask-image: linear-gradient(to bottom, transparent, #000 14%, #000 82%, transparent), linear-gradient(to right, transparent, #000 8%, #000 92%, transparent); mask-composite: intersect; }
 .bridge-c1 { color: var(--night-foreground); opacity: clamp(0, (0.62 - var(--p)) * 5, 1); }
-.bridge-c2 { opacity: clamp(0, (var(--p) - 0.8) * 6, 1); }
+.bridge-c2 { opacity: clamp(0, (var(--p) - 0.88) * 9, 1); }
 .bridge-c1 small { color: var(--night-muted); }
 /* Dark theme: the morning frames are bright, so they dim as morning arrives and end close to the dark body, keeping the 9:00 caption readable. */
-.dark .bridge-frame canvas { filter: brightness(calc(1 - var(--q) * 0.8)); }
+.dark .bridge-frame canvas { filter: brightness(calc(1 - var(--d) * 0.8)); }
 @media (prefers-reduced-motion: reduce) { .bridge { --p: 1 !important; } }
