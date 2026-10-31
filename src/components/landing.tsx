@@ -216,7 +216,8 @@ export function Bridge() {
   return (
     <section ref={root} aria-label="From night to morning" className="bridge relative pb-[calc(var(--spacing-section)*0.5)]">
       <div className="bridge-frame relative mx-auto aspect-[16/10] max-h-[88svh] w-full max-w-[90rem]">
-        <FrameSequence base="/frames/night" count={90} smCount={45} start="top bottom" end="bottom bottom" onProgress={onProgress} className="size-full" />
+        {/* Ends when the frame's bottom reaches the viewport bottom, so the ramp is finished before the light body shows. */}
+        <FrameSequence base="/frames/night" count={90} smCount={45} end="bottom bottom" onProgress={onProgress} className="size-full" />
       </div>
       <div className="mx-auto mt-6 w-full max-w-6xl px-4 sm:px-6 md:absolute md:inset-x-0 md:bottom-[calc(var(--spacing-section)*0.5+8%)] md:mt-0">
         <div className="grid min-h-28 items-end md:min-h-0">
