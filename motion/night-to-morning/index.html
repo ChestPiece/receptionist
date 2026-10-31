@@ -2,128 +2,203 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=1600, height=1000" />
+    <meta name="viewport" content="width=1920, height=1200" />
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
     <style>
       @font-face{font-family:"Geist";font-weight:100 900;src:url("assets/fonts/geist.woff2") format("woff2")}
       /* Shot spec: docs/superpowers/specs/2026-10-30-landing-redesign-design.md section 10 (branch landing-redesign).
-         Palette from the spec's token list, kept inside the composition only. No blue, red or purple. */
+         Palette from the spec's token list, kept inside the composition only. No blue, red or purple.
+         Lighting model: the room is drawn in morning light; a multiply layer (#night) turns it to night and
+         fades out for the morning beat. Light sources (phone screen, street light) sit above it in screen mode. */
       :root{
         --night:#0d1210;--stone:#1c1917;--stone-2:#292524;--sage-glow:#93b59d;--sage:#4f6f5c;--sage-soft:#dfe8df;
-        --sand:#e9c9a8;--paper:#fafaf9;--white:#ffffff;--ink:#0c0a09;
+        --sand:#e9c9a8;--sand-deep:#6b5440;--paper:#fafaf9;--white:#ffffff;--ink:#0c0a09;--muted:#6b6560;--line:#e7e5e4;
       }
       *{margin:0;padding:0;box-sizing:border-box}
-      html,body{width:1600px;height:1000px;overflow:hidden;background:var(--night)}
+      html,body{width:1920px;height:1200px;overflow:hidden;background:var(--night)}
       #root{position:relative;width:100%;height:100%;overflow:hidden;background:var(--night);font-family:"Geist",sans-serif}
       .abs{position:absolute}
-      /* camera: slow 4% push-in centred on the phone (50% / 58%) */
-      #cam{position:absolute;inset:0;transform-origin:800px 580px}
-      /* back wall band starts below the top 20% safe zone */
-      #wall{left:-40px;right:-40px;top:215px;height:125px;background:#111613}
-      #window{left:170px;top:226px;width:300px;height:100px;border-radius:3px;background:#161c19;overflow:hidden}
-      #slats{inset:0;background:repeating-linear-gradient(180deg,rgb(250 250 249 / .05) 0 6px,transparent 6px 11px)}
-      #desk{left:-40px;right:-40px;top:340px;bottom:-40px;background:var(--stone)}
-      #desk-edge{left:-40px;right:-40px;top:338px;height:4px;background:var(--stone-2)}
-      /* cold faint street light falling through the blinds at night */
-      #street{left:120px;top:340px;width:900px;height:520px;transform:skewX(-28deg);
-        background:repeating-linear-gradient(180deg,rgb(245 245 244 / .035) 0 16px,transparent 16px 34px);
-        -webkit-mask-image:linear-gradient(90deg,#000,transparent 85%);mask-image:linear-gradient(90deg,#000,transparent 85%)}
-      /* morning: sand stripes from the blinds sweep across the desk */
-      #stripes{left:180px;top:330px;width:1250px;height:640px;transform:skewX(-28deg);opacity:0;
-        background:repeating-linear-gradient(180deg,rgb(233 201 168 / .9) 0 22px,transparent 22px 46px);
-        -webkit-mask-image:radial-gradient(ellipse 50% 50% at 52% 45%,#000 30%,transparent 100%);mask-image:radial-gradient(ellipse 50% 50% at 52% 45%,#000 30%,transparent 100%)}
-      #spill{left:560px;top:330px;width:480px;height:500px;border-radius:50%;opacity:0;
-        background:radial-gradient(closest-side,rgb(147 181 157 / .38),rgb(147 181 157 / .12) 55%,transparent)}
-      /* props, all in the same three-quarter top-down tilt */
-      .tilt{transform:perspective(1800px) rotateX(32deg)}
-      #pot{left:150px;top:380px;width:150px;height:170px}
-      #pot .rim{position:absolute;left:18px;top:70px;width:114px;height:28px;border-radius:50%;background:#171513}
-      #pot .body{position:absolute;left:26px;top:84px;width:98px;height:84px;border-radius:0 0 22px 22px;background:#141210}
-      #pot .leaf{position:absolute;width:64px;height:30px;border-radius:50%;background:#121a16}
-      #book{left:1040px;top:470px;width:250px;height:190px;border-radius:6px;background:var(--stone-2);
-        transform:perspective(1800px) rotateX(32deg) rotate(7deg);box-shadow:0 18px 26px -12px rgb(0 0 0 / .55)}
-      #book .spine{position:absolute;left:0;top:0;bottom:0;width:20px;border-radius:6px 0 0 6px;background:#221f1d}
-      #book .band{position:absolute;left:150px;top:0;bottom:0;width:10px;background:#1f1c1a}
-      #pen{left:1010px;top:700px;width:190px;height:9px;border-radius:5px;background:#2f2b28;
-        transform:perspective(1800px) rotateX(32deg) rotate(-14deg)}
-      #phone-wrap{left:696px;top:362px;width:208px;height:436px;transform:perspective(1800px) rotateX(32deg) rotate(-8deg)}
-      #phone{position:absolute;inset:0;border-radius:34px;padding:7px;background:#171412;
-        box-shadow:0 0 0 1px #2c2826,0 26px 34px -14px rgb(0 0 0 / .7)}
-      #screen{position:relative;width:100%;height:100%;border-radius:28px;overflow:hidden;background:#050605}
+      #cam{position:absolute;inset:0;transform-origin:960px 696px}
+      .tilt{transform:perspective(2200px) rotateX(30deg)}
+
+      /* ---- room, drawn in morning light ---- */
+      #wall{left:-60px;right:-60px;top:-60px;height:472px;
+        background:linear-gradient(90deg,#f7f2ea 0%,#f6f3ee 30%,#f5f3f0 60%,#f4f2ef 100%)}
+      #wall-wash{left:-60px;top:-60px;width:1100px;height:472px;background:radial-gradient(40% 60% at 25% 75%,rgb(233 201 168 / .16),transparent 80%)}
+      #window{left:200px;top:268px;width:380px;height:128px;border-radius:4px;background:#e7e2da;padding:6px}
+      #glass{position:relative;width:100%;height:100%;border-radius:2px;overflow:hidden;background:#fffdf9}
+      /* blinds: hard-edged slats with a 1px shadow line each */
+      #slats{position:absolute;inset:0;background:repeating-linear-gradient(180deg,#f3e7d8 0 8px,#d9c6af 8px 9px,#fffaf2 9px 12px)}
+      #cord{position:absolute;left:300px;top:0;bottom:0;width:2px;background:#cdbba5}
+      #sill{left:192px;top:396px;width:396px;height:8px;border-radius:2px;background:#e2dcd3}
+      #desk{left:-60px;right:-60px;top:410px;bottom:-60px;background:
+        linear-gradient(180deg,rgb(255 255 255 / .35),transparent 22%),
+        linear-gradient(100deg,rgb(255 255 255 / .18) 0%,transparent 35%,rgb(120 104 88 / .06) 70%,transparent 100%),
+        repeating-linear-gradient(94deg,rgb(140 124 108 / .07) 0 1px,transparent 1px 17px,rgb(140 124 108 / .045) 17px 19px,transparent 19px 41px,rgb(255 255 255 / .22) 41px 42px,transparent 42px 67px),
+        repeating-linear-gradient(-8deg,rgb(140 124 108 / .04) 0 2px,transparent 2px 113px),
+        #ebe5dc}
+      #desk-lip{left:-60px;right:-60px;top:404px;height:8px;background:linear-gradient(180deg,#fdfbf8,#dcd5cb)}
+
+      /* morning sun through the blinds: crisp parallelograms, faded only along their length */
+      #sun{left:170px;top:414px;width:1100px;height:600px;transform-origin:0 0;transform:skewX(32deg);opacity:0;
+        background:repeating-linear-gradient(180deg,rgb(233 201 168 / .55) 0 30px,transparent 30px 52px);
+        -webkit-mask-image:linear-gradient(90deg,transparent 0,#000 8%,#000 55%,transparent 100%);mask-image:linear-gradient(90deg,transparent 0,#000 8%,#000 55%,transparent 100%)}
+      #sun-wash{left:-60px;top:250px;width:1500px;height:950px;opacity:0;background:radial-gradient(50% 55% at 24% 16%,rgb(250 236 214 / .5),transparent 80%)}
+
+      /* props */
+      #pot{left:228px;top:470px;width:200px;height:200px}
+      #pot .ring{position:absolute;inset:30px;border-radius:50%;background:radial-gradient(circle at 40% 35%,#ece6dd,#cfc6ba 70%);box-shadow:0 14px 18px -10px rgb(12 10 9 / .35)}
+      #pot .soil{position:absolute;inset:44px;border-radius:50%;background:radial-gradient(circle at 50% 45%,#6b5440,#4b3b2e)}
+      #pot .leaf{position:absolute;left:100px;top:100px;width:96px;height:38px;margin:-19px 0 0 0;transform-origin:0 50%;border-radius:0 50% 50% 50% / 0 50% 50% 50%;
+        background:linear-gradient(180deg,#a9c7b1 0 48%,#7f9f89 48% 52%,#93b59d 52% 100%);box-shadow:0 6px 8px -5px rgb(12 10 9 / .3)}
+      #bell{left:610px;top:560px;width:132px;height:132px}
+      #bell .base{position:absolute;inset:0;border-radius:50%;background:#2f2b28;box-shadow:0 12px 16px -8px rgb(12 10 9 / .45)}
+      #bell .dome{position:absolute;inset:12px;border-radius:50%;background:radial-gradient(circle at 36% 32%,#ffffff 0 6%,#e7e5e4 18%,#b9b3ab 55%,#8d867e 100%)}
+      #bell .nub{position:absolute;left:54px;top:54px;width:24px;height:24px;border-radius:50%;background:radial-gradient(circle at 40% 35%,#fff,#a8a29e)}
+      #book{left:1258px;top:548px;width:320px;height:232px;transform:perspective(2200px) rotateX(30deg) rotate(7deg)}
+      #book .pages{position:absolute;left:8px;right:-6px;top:6px;bottom:-6px;border-radius:4px;background:repeating-linear-gradient(90deg,#f7f4ee 0 2px,#e2dcd2 2px 3px)}
+      #book .cover{position:absolute;inset:0;border-radius:5px;background:linear-gradient(135deg,#55705f,#4f6f5c 40%,#45614f);box-shadow:0 18px 22px -12px rgb(12 10 9 / .45)}
+      #book .spine{position:absolute;left:0;top:0;bottom:0;width:26px;border-radius:5px 0 0 5px;background:#405a49}
+      #book .band{position:absolute;left:236px;top:-2px;bottom:-2px;width:12px;background:#2f2b28}
+      #book .label{position:absolute;left:70px;top:84px;width:120px;height:52px;border-radius:3px;background:#f5f1ea;box-shadow:inset 0 0 0 1px #d9d2c6}
+      #book .label i{position:absolute;left:14px;height:4px;border-radius:2px;background:#c9c0b3}
+      #pen{left:1232px;top:840px;width:230px;height:12px;transform:perspective(2200px) rotateX(30deg) rotate(-14deg)}
+      #pen .body{position:absolute;inset:0;border-radius:6px;background:linear-gradient(180deg,#3a3532,#1c1917)}
+      #pen .clip{position:absolute;left:24px;top:-3px;width:60px;height:4px;border-radius:2px;background:#d6d3d1}
+      #pen .tip{position:absolute;right:-14px;top:3px;width:16px;height:6px;border-radius:0 3px 3px 0;background:#a8a29e}
+      #mug{left:1600px;top:860px;width:150px;height:150px}
+      #mug .handle{position:absolute;right:-26px;top:52px;width:44px;height:46px;border-radius:0 22px 22px 0;border:10px solid #f4f1ec;border-left:0}
+      #mug .rim{position:absolute;inset:0;border-radius:50%;background:#f7f4ef;box-shadow:0 14px 18px -10px rgb(12 10 9 / .35),inset 0 0 0 2px #e4ded5}
+      #mug .coffee{position:absolute;inset:14px;border-radius:50%;background:radial-gradient(circle at 42% 38%,#8a6c52,#6b5440 55%,#4b3b2e)}
+      #cards{left:1170px;top:950px;width:170px;height:104px;transform:perspective(2200px) rotateX(30deg) rotate(-5deg)}
+      #cards div{position:absolute;inset:0;border-radius:6px;background:#fbfaf7;box-shadow:0 1px 0 #dcd6cc,0 8px 12px -8px rgb(12 10 9 / .3)}
+      #cards i{position:absolute;left:16px;height:5px;border-radius:3px;background:#e2dcd3}
+
+      /* ---- night ---- */
+      #night{inset:-60px;background:#141917;mix-blend-mode:multiply}
+      /* cold street light through the blinds: crisp, faint */
+      #street{left:170px;top:414px;width:1000px;height:560px;transform-origin:0 0;transform:skewX(32deg);
+        background:repeating-linear-gradient(180deg,rgb(200 214 206 / .045) 0 30px,transparent 30px 52px);
+        -webkit-mask-image:linear-gradient(90deg,#000 5%,transparent 70%);mask-image:linear-gradient(90deg,#000 5%,transparent 70%)}
+      /* phone screen light on the desk: soft falloff, screen blend so it lifts what it touches */
+      #spill{left:620px;top:380px;width:680px;height:640px;opacity:0;
+        background:radial-gradient(closest-side,rgb(147 181 157 / .3),rgb(147 181 157 / .14) 45%,rgb(147 181 157 / .04) 75%,transparent)}
+      #pulse{left:700px;top:460px;width:520px;height:480px;opacity:0;
+        background:radial-gradient(closest-side,rgb(223 232 223 / .22),transparent)}
+
+      /* ---- phone ---- */
+      #phone-wrap{left:835px;top:436px;width:250px;height:520px;transform:perspective(2200px) rotateX(30deg) rotate(-8deg)}
+      #shadow{position:absolute;inset:10px -6px -14px 6px;border-radius:44px;background:rgb(0 0 0 / .45)}
+      #phone{position:absolute;inset:0;border-radius:42px;padding:8px;background:linear-gradient(145deg,#2a2623,#141210);box-shadow:inset 0 0 0 1.5px #3a3532}
+      #screen{position:relative;width:100%;height:100%;border-radius:34px;overflow:hidden;background:#050605}
+      #island{position:absolute;left:50%;top:10px;width:70px;height:20px;margin-left:-35px;border-radius:10px;background:#050605;z-index:5}
       .layer{position:absolute;inset:0;opacity:0}
-      #lock{background:linear-gradient(180deg,#1d2a23 0%,#0f1613 100%)}
-      #time{position:absolute;left:0;right:0;top:56px;text-align:center;color:#f2f1ee;font:200 50px/1 "Geist";letter-spacing:-.04em}
-      #notif{position:absolute;left:12px;right:12px;top:150px;height:58px;border-radius:14px;background:rgb(242 241 238 / .16);opacity:0}
-      .bar{position:absolute;height:6px;border-radius:3px;background:rgb(242 241 238 / .55)}
-      #chat{background:var(--paper)}
-      .bub{position:absolute;border-radius:14px;opacity:0}
-      #b-patient{right:12px;top:40px;width:120px;height:42px;background:var(--sage)}
-      #b-reply{left:12px;top:94px;width:140px;height:54px;background:var(--white);box-shadow:0 0 0 1px #e7e5e4}
-      .bub .bar{background:rgb(255 255 255 / .7)}
-      #b-reply .bar{background:#d6d3d1}
-      #pills{position:absolute;left:12px;right:12px;top:162px;display:flex;gap:6px;opacity:0}
-      .pill{flex:1;height:24px;border-radius:12px;background:var(--white);box-shadow:0 0 0 1px #d6d3d1}
-      #pill-mid{position:relative}
-      #pill-mid i{position:absolute;inset:0;border-radius:12px;background:var(--sage);opacity:0}
-      #booked{position:absolute;left:12px;right:12px;top:204px;height:96px;border-radius:16px;background:var(--white);
-        box-shadow:0 0 0 1px #e7e5e4,0 14px 22px -12px rgb(12 10 9 / .35);opacity:0}
-      #check{position:absolute;left:14px;top:14px;width:30px;height:30px;border-radius:50%;background:var(--sage)}
-      #check svg{position:absolute;inset:7px}
-      #week{background:var(--white)}
-      #grid{position:absolute;left:10px;right:10px;top:46px;bottom:40px;display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
-      .col{border-radius:4px;background:#f5f5f4;position:relative}
-      #slot{position:absolute;left:0;right:0;top:66%;height:14%;border-radius:4px;background:var(--sage)}
-      #week-head{position:absolute;left:10px;top:20px;width:80px;height:8px;border-radius:4px;background:#e7e5e4}
-      /* edge falloff: night vignette, then paper toward the edges in the morning so the page's light body continues */
-      #vig-night{inset:0;background:radial-gradient(ellipse 70% 62% at 50% 58%,transparent 40%,rgb(13 18 16 / .85) 100%)}
-      #vig-day{inset:0;opacity:0;background:radial-gradient(ellipse 66% 60% at 50% 60%,transparent 48%,var(--paper) 96%)}
-      #top-night{left:0;right:0;top:0;height:215px;background:var(--night)}
+      /* lock screen */
+      #lock{background:linear-gradient(180deg,#22332a 0%,#15201b 55%,#0d1411 100%)}
+      #time{position:absolute;left:0;right:0;top:66px;text-align:center;color:#f2f1ee;font:250 64px/1 "Geist";letter-spacing:-.045em}
+      #notif{position:absolute;left:12px;right:12px;top:180px;height:62px;border-radius:16px;background:rgb(242 241 238 / .14);box-shadow:inset 0 0 0 1px rgb(242 241 238 / .1);opacity:0}
+      #notif .app{position:absolute;left:12px;top:12px;width:22px;height:22px;border-radius:6px;background:#93b59d}
+      #notif b{position:absolute;left:44px;top:13px;color:#f2f1ee;font:600 12px/1 "Geist"}
+      #notif span{position:absolute;left:44px;top:32px;color:rgb(242 241 238 / .7);font:500 11px/1 "Geist"}
+      /* chat */
+      #chat{background:#f3f1ec}
+      #chat-head{position:absolute;left:0;right:0;top:0;height:76px;padding:38px 0 0 14px;background:#fafaf9;box-shadow:0 1px 0 #e7e5e4}
+      #chat-head .av{position:absolute;left:14px;top:38px;width:28px;height:28px;border-radius:50%;background:#4f6f5c;color:#fff;font:600 13px/28px "Geist";text-align:center}
+      #chat-head b{position:absolute;left:50px;top:40px;color:#0c0a09;font:600 13px/1 "Geist"}
+      #chat-head span{position:absolute;left:50px;top:57px;color:#4f6f5c;font:500 10px/1 "Geist"}
+      .msg{position:absolute;padding:9px 11px;border-radius:14px;font:500 12px/1.25 "Geist";opacity:0}
+      #m1{right:12px;top:92px;background:#4f6f5c;color:#fff;border-bottom-right-radius:4px}
+      #m2{left:12px;top:140px;background:#fff;color:#0c0a09;border-bottom-left-radius:4px;box-shadow:0 1px 0 #e7e5e4}
+      #pills{position:absolute;left:12px;right:12px;top:186px;display:flex;gap:6px;opacity:0}
+      .pill{flex:1;height:30px;border-radius:15px;background:#fff;box-shadow:inset 0 0 0 1px #d6d3d1;color:#0c0a09;font:600 12px/30px "Geist";text-align:center;position:relative;overflow:hidden}
+      .pill i{position:absolute;inset:0;background:#4f6f5c;color:#fff;font-style:normal;opacity:0}
+      #booked{position:absolute;left:12px;right:12px;top:232px;height:98px;border-radius:16px;background:#fff;
+        box-shadow:0 0 0 1px #e7e5e4,0 12px 18px -10px rgb(12 10 9 / .3);opacity:0}
+      #tick{position:absolute;left:14px;top:16px;width:32px;height:32px;border-radius:50%;background:#4f6f5c}
+      #tick svg{position:absolute;inset:8px}
+      #booked b{position:absolute;left:56px;top:18px;color:#4f6f5c;font:600 11px/1 "Geist"}
+      #booked strong{position:absolute;left:56px;top:34px;color:#0c0a09;font:600 16px/1 "Geist";letter-spacing:-.02em}
+      #booked span{position:absolute;left:14px;top:66px;right:14px;height:20px;border-radius:6px;background:#dfe8df;color:#4f6f5c;font:600 10px/20px "Geist";padding-left:8px}
+      /* morning calendar */
+      #week{background:#fff}
+      #week b{position:absolute;left:14px;top:44px;color:#0c0a09;font:600 15px/1 "Geist";letter-spacing:-.02em}
+      #days{position:absolute;left:12px;right:12px;top:72px;display:grid;grid-template-columns:repeat(7,1fr);gap:3px;color:#6b6560;font:600 10px/1 "Geist";text-align:center}
+      #days .on{color:#4f6f5c}
+      #grid{position:absolute;left:12px;right:12px;top:90px;bottom:24px;display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+      .col{position:relative;border-radius:5px;background:repeating-linear-gradient(180deg,#f5f5f4 0 47px,#e7e5e4 47px 48px)}
+      #slot{position:absolute;left:0;right:0;top:63%;height:13%;border-radius:5px;background:#4f6f5c;color:#fff;font:600 9px/1 "Geist";padding:5px 0 0 3px}
+
+      /* morning edges meet the page's paper */
+      #edges{inset:0;opacity:0;background:
+        linear-gradient(90deg,#fafaf9 0,rgb(250 250 249 / 0) 90px),
+        linear-gradient(270deg,#fafaf9 0,rgb(250 250 249 / 0) 90px),
+        linear-gradient(0deg,#fafaf9 0,rgb(250 250 249 / 0) 80px),
+        linear-gradient(180deg,#fafaf9 0,#fafaf9 200px,rgb(250 250 249 / 0) 250px)}
+      #top-night{left:0;right:0;top:0;height:250px;background:var(--night)}
     </style>
   </head>
   <body>
-    <div id="root" data-composition-id="main" data-width="1600" data-height="1000" data-duration="3" data-fps="30">
+    <div id="root" data-composition-id="main" data-width="1920" data-height="1200" data-duration="3" data-fps="30">
       <div id="scene" class="abs clip" style="inset:0" data-start="0" data-duration="3" data-track-index="0">
         <div id="cam">
           <div id="wall" class="abs"></div>
-          <div id="window" class="abs"><div id="slats" class="abs"></div></div>
+          <div id="wall-wash" class="abs"></div>
+          <div id="window" class="abs"><div id="glass"><div id="slats"></div><div id="cord"></div></div></div>
+          <div id="sill" class="abs"></div>
           <div id="desk" class="abs"></div>
-          <div id="desk-edge" class="abs"></div>
-          <div id="street" class="abs"></div>
-          <div id="stripes" class="abs"></div>
-          <div id="spill" class="abs"></div>
+          <div id="desk-lip" class="abs"></div>
+          <div id="sun-wash" class="abs"></div>
+          <div id="sun" class="abs"></div>
           <div id="pot" class="abs tilt">
-            <div class="leaf" style="left:10px;top:30px;transform:rotate(-30deg)"></div>
-            <div class="leaf" style="left:70px;top:22px;transform:rotate(25deg)"></div>
-            <div class="leaf" style="left:42px;top:4px;transform:rotate(-80deg)"></div>
-            <div class="rim"></div><div class="body"></div>
+            <div class="ring"></div><div class="soil"></div>
+            <div class="leaf" style="transform:rotate(-150deg)"></div>
+            <div class="leaf" style="transform:rotate(-80deg) scale(.9)"></div>
+            <div class="leaf" style="transform:rotate(-20deg)"></div>
+            <div class="leaf" style="transform:rotate(40deg) scale(.85)"></div>
+            <div class="leaf" style="transform:rotate(110deg) scale(.95)"></div>
           </div>
-          <div id="book" class="abs"><div class="spine"></div><div class="band"></div></div>
-          <div id="pen" class="abs"></div>
-          <!-- falloff layers sit under the phone so its screen stays the lit object -->
-          <div id="vig-night" class="abs"></div>
-          <div id="vig-day" class="abs"></div>
+          <div id="bell" class="abs tilt"><div class="base"></div><div class="dome"></div><div class="nub"></div></div>
+          <div id="book" class="abs">
+            <div class="pages"></div><div class="cover"></div><div class="spine"></div>
+            <div class="label"><i style="top:16px;width:80px"></i><i style="top:30px;width:56px"></i></div>
+            <div class="band"></div>
+          </div>
+          <div id="pen" class="abs"><div class="body"></div><div class="clip"></div><div class="tip"></div></div>
+          <div id="cards" class="abs">
+            <div style="transform:translate(10px,8px) rotate(4deg)"></div>
+            <div><i style="top:22px;width:90px"></i><i style="top:38px;width:120px"></i><i style="top:54px;width:70px"></i></div>
+          </div>
+          <div id="mug" class="abs tilt"><div class="handle"></div><div class="rim"></div><div class="coffee"></div></div>
+
+          <div id="night" class="abs"></div>
+          <div id="street" class="abs"></div>
+          <div id="spill" class="abs"></div>
+          <div id="pulse" class="abs"></div>
+          <div id="edges" class="abs"></div>
           <div id="top-night" class="abs"></div>
-          <div id="phone-wrap" class="abs"><div id="phone"><div id="screen">
+
+          <div id="phone-wrap" class="abs"><div id="shadow"></div><div id="phone"><div id="screen">
+            <div id="island"></div>
             <div id="lock" class="layer">
               <div id="time">2:14</div>
-              <div id="notif"><div class="bar" style="left:12px;top:16px;width:70px"></div><div class="bar" style="left:12px;top:32px;width:130px;opacity:.6"></div></div>
+              <div id="notif"><div class="app"></div><b>WhatsApp</b><span>New message</span></div>
             </div>
             <div id="chat" class="layer">
-              <div id="b-patient" class="bub"><div class="bar" style="left:12px;top:12px;width:90px"></div><div class="bar" style="left:12px;top:24px;width:60px"></div></div>
-              <div id="b-reply" class="bub"><div class="bar" style="left:12px;top:12px;width:110px"></div><div class="bar" style="left:12px;top:24px;width:116px"></div><div class="bar" style="left:12px;top:36px;width:70px"></div></div>
-              <div id="pills"><div class="pill"></div><div class="pill" id="pill-mid"><i></i></div><div class="pill"></div></div>
+              <div id="chat-head"><div class="av">S</div><b>Sara</b><span>online</span></div>
+              <div id="m1" class="msg">Cleaning this week?</div>
+              <div id="m2" class="msg">Thursday evening is free:</div>
+              <div id="pills"><div class="pill">5:00</div><div class="pill" id="pill-mid">6:30<i>6:30</i></div><div class="pill">7:15</div></div>
               <div id="booked">
-                <div id="check"><svg viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3L13 4.5"/></svg></div>
-                <div class="bar" style="left:56px;top:18px;width:90px;background:#d6d3d1"></div>
-                <div class="bar" style="left:56px;top:32px;width:60px;background:#e7e5e4"></div>
-                <div class="bar" style="left:14px;top:62px;width:150px;background:#dfe8df;height:8px;border-radius:4px"></div>
+                <div id="tick"><svg viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3L13 4.5"/></svg></div>
+                <b>Booked</b><strong>Thu, 6:30 pm</strong><span>Cleaning, 45 min</span>
               </div>
             </div>
             <div id="week" class="layer">
-              <div id="week-head"></div>
+              <b>This week</b>
+              <div id="days"><span>S</span><span>S</span><span>M</span><span>T</span><span>W</span><span class="on">T</span><span>F</span></div>
               <div id="grid">
                 <div class="col"></div><div class="col"></div><div class="col"></div><div class="col"></div><div class="col"></div>
-                <div class="col"><div id="slot"></div></div><div class="col"></div>
+                <div class="col"><div id="slot">6:30</div></div><div class="col"></div>
               </div>
             </div>
           </div></div></div>
@@ -136,55 +211,47 @@
 
       // camera: 4% push-in across all 90 frames
       tl.fromTo("#cam", { scale: 1 }, { scale: 1.04, duration: 3, ease: "none" }, 0);
-      // frames 0-29 keep the top 20% flat night; it lifts once the phone is awake
+      // frames 0-29 keep the top 20% flat night; the multiplied wall is the same tone, so the lift is seamless
       tl.to("#top-night", { opacity: 0, duration: F(10), ease: "power1.inOut" }, F(30));
 
-      // 15-29 phone wakes: lock screen, sage spill, abstract notification
+      // 15-29 phone wakes: lock screen, screen light on the desk, notification
       tl.to("#lock", { opacity: 1, duration: F(5), ease: "power2.out" }, F(15));
-      tl.to("#spill", { opacity: 1, duration: F(10), ease: "power2.out" }, F(15));
+      tl.to("#spill", { opacity: 0.75, duration: F(10), ease: "power2.out" }, F(15));
       tl.fromTo("#notif", { opacity: 0, y: -24 }, { opacity: 1, y: 0, duration: F(9), ease: "power3.out" }, F(20));
 
-      // 30-49 chat: patient bubble, reply bubble, three slot pills, middle turns sage
+      // 30-49 chat: patient bubble, reply, three slot pills, middle turns sage; the bright screen throws more light
       tl.to("#chat", { opacity: 1, duration: F(4), ease: "power1.inOut" }, F(30));
       tl.to("#lock", { opacity: 0, duration: F(4), ease: "power1.inOut" }, F(30));
-      tl.fromTo("#b-patient", { opacity: 0, y: 26 }, { opacity: 1, y: 0, duration: F(7), ease: "expo.out" }, F(31));
-      tl.fromTo("#b-reply", { opacity: 0, y: 26 }, { opacity: 1, y: 0, duration: F(7), ease: "expo.out" }, F(37));
-      tl.fromTo("#pills", { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: F(6), ease: "power3.out" }, F(42));
+      tl.to("#spill", { opacity: 1, duration: F(6), ease: "power1.inOut" }, F(30));
+      tl.fromTo("#m1", { opacity: 0, y: 22 }, { opacity: 1, y: 0, duration: F(7), ease: "expo.out" }, F(31));
+      tl.fromTo("#m2", { opacity: 0, y: 22 }, { opacity: 1, y: 0, duration: F(7), ease: "expo.out" }, F(37));
+      tl.fromTo("#pills", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: F(6), ease: "power3.out" }, F(42));
       tl.to("#pill-mid i", { opacity: 1, duration: F(3), ease: "power2.out" }, F(47));
 
       // 50-59 booking lands, one sage pulse on the desk (peak 54, back by 59)
-      tl.fromTo("#booked", { opacity: 0, y: -30, scale: 1.04 }, { opacity: 1, y: 0, scale: 1, duration: F(7), ease: "power3.out" }, F(50));
-      tl.to("#spill", { scale: 1.18, opacity: 1, filter: "brightness(1.6)", duration: F(4), ease: "power2.out" }, F(50));
-      tl.to("#spill", { scale: 1, filter: "brightness(1)", duration: F(5), ease: "power2.inOut" }, F(54));
+      tl.fromTo("#booked", { opacity: 0, y: -26, scale: 1.04 }, { opacity: 1, y: 0, scale: 1, duration: F(7), ease: "power3.out" }, F(50));
+      tl.to("#pulse", { opacity: 1, scale: 1.15, duration: F(4), ease: "power2.out" }, F(50));
+      tl.to("#pulse", { opacity: 0, scale: 1, duration: F(5), ease: "power2.inOut" }, F(54));
 
       // 60-64 screen dims back to the lock screen; still night
       tl.to("#chat", { opacity: 0, duration: F(2), ease: "power1.in" }, F(60));
-      tl.to("#notif", { opacity: 0, duration: F(4), ease: "power1.inOut" }, F(60));
+      tl.to("#notif", { opacity: 0, duration: F(2), ease: "power1.in" }, F(60));
       tl.to("#lock", { opacity: 0.6, duration: F(2), ease: "power1.out" }, F(61));
-      tl.to("#spill", { opacity: 0.5, duration: F(4), ease: "power1.inOut" }, F(60));
+      tl.to("#spill", { opacity: 0.45, duration: F(4), ease: "power1.inOut" }, F(60));
 
-      // 65-84 morning: exposure ramp (expo.inOut), blind stripes sweep, desk warms, screen shows the week
+      // 65-84 morning: exposure ramp (expo.inOut), sun stripes sweep, screen shows the week
       const M = F(65), MD = F(20), EXPO = "expo.inOut";
+      tl.to("#night", { opacity: 0, duration: MD, ease: EXPO }, M);
       tl.to("#root", { backgroundColor: "#fafaf9", duration: MD, ease: EXPO }, M);
-      tl.to("#wall", { backgroundColor: "#f5f3ef", duration: MD, ease: EXPO }, M);
-      tl.to("#window", { backgroundColor: "#fffdf8", duration: MD, ease: EXPO }, M);
-      tl.to("#slats", { background: "repeating-linear-gradient(180deg,rgba(233,201,168,.55) 0 6px,transparent 6px 11px)", duration: MD, ease: EXPO }, M);
-      tl.to("#desk", { backgroundColor: "#efebe5", duration: MD, ease: EXPO }, M);
-      tl.to("#desk-edge", { backgroundColor: "#e2ddd6", duration: MD, ease: EXPO }, M);
       tl.to("#street", { opacity: 0, duration: F(8), ease: "power1.inOut" }, M);
-      tl.fromTo("#stripes", { opacity: 0, xPercent: -22 }, { opacity: 0.55, xPercent: 0, duration: MD, ease: "power2.inOut" }, M);
       tl.to("#spill", { opacity: 0, duration: F(10), ease: "power1.inOut" }, M);
-      tl.to("#book", { backgroundColor: "#d9d2c8", boxShadow: "0 18px 26px -14px rgba(12,10,9,.18)", duration: MD, ease: EXPO }, M);
-      tl.to("#book .spine", { backgroundColor: "#cfc7bc", duration: MD, ease: EXPO }, M);
-      tl.to("#book .band", { backgroundColor: "#c7beb2", duration: MD, ease: EXPO }, M);
-      tl.to("#pen", { backgroundColor: "#4f6f5c", duration: MD, ease: EXPO }, M);
-      tl.to("#pot .rim, #pot .body", { backgroundColor: "#d8d0c5", duration: MD, ease: EXPO }, M);
-      tl.to("#pot .leaf", { backgroundColor: "#93b59d", duration: MD, ease: EXPO }, M);
-      tl.to("#phone", { backgroundColor: "#e7e5e4", boxShadow: "0 0 0 1px #d6d3d1, 0 26px 34px -18px rgba(12,10,9,.22)", duration: MD, ease: EXPO }, M);
-      tl.to("#week", { opacity: 1, duration: F(6), ease: "power1.inOut" }, F(68));
+      tl.fromTo("#sun", { opacity: 0, xPercent: -18 }, { opacity: 1, xPercent: 0, duration: MD, ease: "power2.inOut" }, M);
+      tl.to("#sun-wash", { opacity: 1, duration: MD, ease: EXPO }, M);
+      tl.to("#edges", { opacity: 1, duration: MD, ease: EXPO }, M);
+      tl.to("#phone", { background: "linear-gradient(145deg,#f5f5f4,#d6d3d1)", boxShadow: "inset 0 0 0 1.5px #e7e5e4", duration: MD, ease: EXPO }, M);
+      tl.to("#shadow", { backgroundColor: "rgba(60,48,36,.22)", duration: MD, ease: EXPO }, M);
       tl.to("#lock", { opacity: 0, duration: F(3), ease: "power1.in" }, F(66));
-      tl.to("#vig-night", { opacity: 0, duration: MD, ease: EXPO }, M);
-      tl.to("#vig-day", { opacity: 1, duration: MD, ease: EXPO }, M);
+      tl.to("#week", { opacity: 1, duration: F(6), ease: "power1.inOut" }, F(68));
 
       // 85-89 hold on the calm morning
       tl.set({}, {}, 3);

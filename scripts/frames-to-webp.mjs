@@ -1,6 +1,6 @@
 // Convert a HyperFrames PNG sequence into the WebP sets <FrameSequence> plays.
 // Usage: node scripts/frames-to-webp.mjs <png-dir> <out-dir> [quality=75]
-// Writes <out-dir>/lg/0001.webp… (1600x1000, every frame) and <out-dir>/sm/0001.webp… (800x500, every 2nd frame).
+// Writes <out-dir>/lg/0001.webp… (1920x1200, every frame) and <out-dir>/sm/0001.webp… (800x500, every 2nd frame).
 // Needs ffmpeg with libwebp. Uses FFMPEG, then PATH, then the winget Gyan.FFmpeg install.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
@@ -28,7 +28,7 @@ function findFfmpeg() {
 const ffmpeg = findFfmpeg();
 const input = join(pngDir, "frame_%06d.png");
 const sets = [
-  { name: "lg", vf: "scale=1600:1000" },
+  { name: "lg", vf: "scale=1920:1200" },
   { name: "sm", vf: "select=not(mod(n\\,2)),scale=800:500" },
 ];
 
