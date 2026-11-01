@@ -51,7 +51,7 @@ Check for:
 
 export async function reviewTurn(a: { clinic: Clinic; userText: string; reply: string; toolCalls: ToolCall[] }) {
   const input = `Bot instructions:\n${buildInstructions(a.clinic, null, null, new Date())}\n\nPatient: ${a.userText}\n\nReply: ${a.reply}\n\nTool calls: ${JSON.stringify(a.toolCalls)}`;
-  const r = await run(reviewer, input);
+  const r = await run(reviewer, input, { signal: AbortSignal.timeout(15_000) }); // never hold the webhook past maxDuration
   return { review: r.finalOutput ?? { ok: true, issues: [] }, usage: r.state.usage };
 }
 

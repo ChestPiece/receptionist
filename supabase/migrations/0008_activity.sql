@@ -15,7 +15,7 @@ create index if not exists patients_clinic_real_idx on patients (clinic_id) wher
 create table if not exists agent_events (
   id uuid primary key default gen_random_uuid(),
   clinic_id uuid not null references clinics on delete cascade,
-  patient_id uuid references patients on delete set null,
+  patient_id uuid references patients on delete cascade,
   appointment_id uuid references appointments on delete set null,
   actor text not null check (actor in ('sara', 'staff', 'system', 'reviewer')),
   kind text not null,
