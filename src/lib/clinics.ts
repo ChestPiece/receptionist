@@ -30,16 +30,22 @@ export type Clinic = {
   webhook_secret: string | null;
 };
 
-type Row = Omit<Clinic, "wa" | "webhook_secret" | "dentists"> & {
+type Row = Omit<Clinic, "wa" | "webhook_secret" | "dentists" | "services"> & {
   clinic_secrets: { ultramsg_token: string; webhook_secret: string } | null;
+  service_rows: Service[];
+  dentists: (Omit<Dentist, "service_ids"> & { dentist_services: { service_id: string }[] })[];
 };
 
-const SELECT = "*, clinic_secrets(ultramsg_token, webhook_secret)";
+const SELECT = "*, clinic_secrets(ultramsg_token, webhook_secret), service_rows:services(*), dentists(*, dentist_services(service_id))";
 
-function toClinic({ clinic_secrets: s, ...row }: Row): Clinic {
+// Sorted by `sort`, then name. The legacy clinics.services jsonb is ignored.
+const bySortName = (a: { sort: number; name: string }, b: { sort: number; name: string }) => a.sort - b.sort || a.name.localeCompare(b.name);
+
+export function toClinic({ clinic_secrets: s, service_rows, dentists, ...row }: Row): Clinic {
   return {
     ...row,
-    dentists: [], // Task 3 loads them
+    services: [...service_rows].filter((x) => x.active).sort(bySortName),
+    dentists: [...dentists].sort(bySortName).map(({ dentist_services, ...d }) => ({ ...d, service_ids: dentist_services.map((x) => x.service_id) })),
     persona: row.persona ?? {},
     branding: row.branding ?? {},
     wa: s && row.ultramsg_instance_id ? { instanceId: row.ultramsg_instance_id, token: s.ultramsg_token } : null,
@@ -49,10 +55,12 @@ function toClinic({ clinic_secrets: s, ...row }: Row): Clinic {
 
 export const personaName = (c: Pick<Clinic, "persona">) => c.persona?.name || "Sara";
 
-// ponytail: clinic rows cached per server process for 5 min, so clinic edits show up within 5 min. P3 settings clears it on save.
-const TTL = 300_000;
+// ponytail: clinic rows cached per server process for 60 s, so edits made on another server instance show up within a minute. Saves on this instance call forgetClinic.
+const TTL = 60_000;
 const cache = new Map<string, { clinic: Clinic; at: number }>();
 const remember = (clinic: Clinic) => (cache.set(clinic.id, { clinic, at: Date.now() }), clinic);
+
+export const forgetClinic = (id: string) => void cache.delete(id);
 
 export async function loadClinic(id: string): Promise<Clinic> {
   const hit = cache.get(id);
