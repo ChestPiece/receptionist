@@ -3,12 +3,11 @@ import { Agent, run, tool, type AgentInputItem, type RunContext, type RunItem } 
 import { z } from "zod";
 import { personaName, type Clinic, type Service } from "./clinics";
 import { db } from "./db";
-import { bookingSource } from "./jobs";
+import { bookingSource, HORIZON_DAYS, tooFar } from "./booking";
 import { DAYS, freeSlots, localDate, localTime, toUtc, spreadSlots } from "./slots";
 import { sendText } from "./whatsapp";
 
 const MAX_UPCOMING = 3; // upcoming visits per patient
-const HORIZON_DAYS = 60;
 
 // waId null = web chat visitor.
 type Ctx = { clinic: Clinic; patientId: string; patientName: string | null; patientPhone: string | null; waId: string | null };
@@ -273,7 +272,7 @@ const receptionist = new Agent<Ctx>({
   tools: [findSlots, book, myAppointments, cancel, reschedule, confirmVisit, handoff],
 }); // Model: SDK default; override with OPENAI_DEFAULT_MODEL.
 
-export const tooFar = (date: string, today: string) => Date.parse(date) - Date.parse(today) > HORIZON_DAYS * 86_400_000;
+export { tooFar };
 
 // Tools that change data. A run that used one must still send its reply, even if a newer message arrived meanwhile.
 const WRITES = new Set(["book", "cancel", "reschedule", "confirm_visit", "handoff_to_staff"]);

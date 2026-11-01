@@ -1,6 +1,7 @@
 // Outbound jobs run by POST /api/cron every 15 min (pg_cron + pg_net), for every active clinic: reminders and follow-ups.
 import { assistant, type AgentInputItem } from "@openai/agents";
 import { stillPaused, trimHistory } from "./agent";
+import { bookingSource } from "./booking";
 import { activeClinics, personaName, type Clinic } from "./clinics";
 import { db, logMessages } from "./db";
 import { slotsOn } from "./sara";
@@ -78,9 +79,7 @@ export function followupText(f: { name: string | null; service: string | null; s
   return `${en}\n${ar}\n(Reply STOP to stop these messages. أرسل توقف لإيقافها.)`;
 }
 
-// The weekly report credits a booking to the follow-up if it came within 48 h of the nudge.
-export const bookingSource = (followupSentAt: string | null, now: Date) =>
-  followupSentAt && now.getTime() - Date.parse(followupSentAt) <= 48 * HOUR ? "followup" : "chat";
+export { bookingSource };
 
 // Bilingual, like the other fixed replies: the patient's language is not stored.
 export function reminderText(r: { name: string | null; service: string; startsAt: Date; clinic: string; offsetMin: number }) {

@@ -3,7 +3,11 @@ import { db } from "./db";
 import type { Hours } from "./slots";
 import { normInstance, type WaCreds } from "./whatsapp";
 
-export type Service = { name: string; name_ar: string; minutes: number; price_aed: number };
+export type Service = { id: string; name: string; name_ar: string; minutes: number; price_aed: number; active: boolean; sort: number };
+export type Dentist = {
+  id: string; name: string; name_ar: string | null; title: string | null; color: string | null;
+  hours: Hours; active: boolean; sort: number; service_ids: string[];
+};
 export type Clinic = {
   id: string;
   slug: string | null;
@@ -11,6 +15,7 @@ export type Clinic = {
   utc_offset_minutes: number;
   hours: Hours;
   services: Service[];
+  dentists: Dentist[];
   insurers: string[];
   faq: { q: string; a: string }[];
   phone: string | null;
@@ -25,7 +30,7 @@ export type Clinic = {
   webhook_secret: string | null;
 };
 
-type Row = Omit<Clinic, "wa" | "webhook_secret"> & {
+type Row = Omit<Clinic, "wa" | "webhook_secret" | "dentists"> & {
   clinic_secrets: { ultramsg_token: string; webhook_secret: string } | null;
 };
 
@@ -34,6 +39,7 @@ const SELECT = "*, clinic_secrets(ultramsg_token, webhook_secret)";
 function toClinic({ clinic_secrets: s, ...row }: Row): Clinic {
   return {
     ...row,
+    dentists: [], // Task 3 loads them
     persona: row.persona ?? {},
     branding: row.branding ?? {},
     wa: s && row.ultramsg_instance_id ? { instanceId: row.ultramsg_instance_id, token: s.ultramsg_token } : null,
