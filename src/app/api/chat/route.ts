@@ -7,6 +7,7 @@ import { z } from "zod";
 import { capText, RATE_MAX, RATE_WINDOW_MS, slowDown, sorry, stillPaused, trimHistory } from "@/lib/agent";
 import { clinicBySlug } from "@/lib/clinics";
 import { db, logMessages, logUsage } from "@/lib/db";
+import { reviewAndLog } from "@/lib/reviewer";
 import { emergencyReply, isEmergency } from "@/lib/safety";
 import { streamSara } from "@/lib/sara";
 
@@ -94,6 +95,7 @@ export async function POST(req: Request) {
         await result.completed;
         await logUsage(clinic.id, "web", result.state.usage);
         await save(result.history, result.finalOutput);
+        await reviewAndLog({ clinic, patientId: patient.id, channel: "web", userText: text, reply: result.finalOutput, items: result.newItems });
       } catch (e) {
         console.error("[chat]", (e as Error).message);
       }

@@ -2,6 +2,7 @@
 import { assistant, user, type AgentInputItem } from "@openai/agents";
 import type { Clinic } from "./clinics";
 import { db, logMessages, logUsage } from "./db";
+import { reviewAndLog } from "./reviewer";
 import { emergencyReply, isEmergency, isStop, stopReply } from "./safety";
 import { runSara, wroteData } from "./sara";
 import { markRead, sendText, type IncomingMessage } from "./whatsapp";
@@ -235,6 +236,8 @@ export async function handleMessage(clinic: Clinic, msg: IncomingMessage) {
         if (error) throw error;
       })().catch((e) => console.error("[history]", (e as Error).message)),
     ]);
+    // Already inside the webhook's after(); the reviewer never throws and the reply is out.
+    await reviewAndLog({ clinic, patientId: patient.id, channel: "whatsapp", userText: text, reply, items: result.newItems });
   } catch (e) {
     console.error("[agent]", (e as Error).message);
     await answered(); // don't replay failed pieces into the next message
