@@ -2,6 +2,7 @@
 import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 import { stillPaused } from "./agent";
 import type { Clinic } from "./clinics";
 import { roleOf, type Role } from "./role";
@@ -13,6 +14,7 @@ export const CLINIC_COOKIE = "desk_clinic";
 
 // RLS returns only clinics the user belongs to (every clinic for platform admins). Cached per request.
 export const desk = cache(async () => {
+  await connection(); // the session check reads the clock (token expiry), so render at request time
   const sb = await supabaseServer();
   const { data: claims } = await sb.auth.getClaims();
   if (!claims?.claims) redirect("/login");
