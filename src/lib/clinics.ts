@@ -1,4 +1,5 @@
 // Tenants: each clinic row carries its config; its UltraMsg credentials live in clinic_secrets (service role only).
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { db } from "./db";
 import type { Hours } from "./slots";
 import { normInstance, type WaCreds } from "./whatsapp";
@@ -68,6 +69,13 @@ export async function loadClinic(id: string): Promise<Clinic> {
   const { data, error } = await db().from("clinics").select(SELECT).eq("id", id).single();
   if (error) throw error;
   return remember(toClinic(data as Row));
+}
+
+// Dashboard: the same config through the staff member's own client (RLS), uncached, without secrets.
+export async function deskConfig(sb: SupabaseClient, id: string): Promise<Clinic> {
+  const { data, error } = await sb.from("clinics").select("*, service_rows:services(*), dentists(*, dentist_services(service_id))").eq("id", id).single();
+  if (error) throw error;
+  return toClinic({ ...(data as Omit<Row, "clinic_secrets">), clinic_secrets: null });
 }
 
 export async function clinicByInstance(instanceId: string): Promise<Clinic | null> {
