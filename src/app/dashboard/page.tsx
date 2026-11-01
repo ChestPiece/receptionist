@@ -1,84 +1,134 @@
 import Link from "next/link";
-import { Line, Tally, Typed, WeekCalendar } from "@/components/ledger";
+import { Button } from "@/components/ui/button";
 import { stillPaused } from "@/lib/agent";
-import { afterHours, desk, week, weekStart, who } from "@/lib/dashboard";
-import { localDate } from "@/lib/slots";
+import { deskConfig } from "@/lib/clinics";
+import { desk, deskSetup, weekStart, who } from "@/lib/dashboard";
+import { localDate, localTime } from "@/lib/slots";
+import { cn } from "@/lib/utils";
 import { PageBody, PageHeader } from "./page-frame";
+import { NewBooking } from "./schedule";
+import { setVisitStatus } from "./actions";
 
 export const metadata = { title: "Today" };
 
-const LONG = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", timeZone: "UTC" });
+const LONG = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
+type Person = { name: string | null; phone: string | null; wa_id: string | null };
+type Row = { id: string; service: string; starts_at: string; status: string; source: string; created_at: string; dentist_id: string; patient_id: string; patients: Person | null };
 
 export default async function Today() {
-  const { sb, clinic } = await desk();
-  if (!clinic) return null;
-  const start = weekStart(localDate(new Date(), clinic.utc_offset_minutes));
-  const [cal, { data: paused }] = await Promise.all([
-    week(sb, clinic, start, (id) => `/dashboard/calendar?w=${start}&a=${id}`),
-    sb
-      .from("conversations")
-      .select("patient_id, bot_paused, updated_at, patients!inner(clinic_id, name, phone, wa_id)")
-      .eq("patients.clinic_id", clinic.id)
-      .eq("bot_paused", true)
-      .order("updated_at", { ascending: false }),
+  const { sb, clinic: picked } = await desk();
+  if (!picked) return null;
+  const clinic = await deskConfig(sb, picked.id);
+  const off = clinic.utc_offset_minutes;
+  const today = localDate(new Date(), off);
+  const utc = (d: string) => new Date(Date.parse(`${d}T00:00:00Z`) - off * 60_000).toISOString();
+  const weekFrom = utc(weekStart(today));
+  const dayEnd = new Date(Date.parse(utc(today)) + 86_400_000).toISOString();
+
+  const [{ data: visits }, { data: week }, { data: paused }] = await Promise.all([
+    sb.from("appointments").select("id, service, starts_at, status, source, created_at, dentist_id, patient_id, patients(name, phone, wa_id)")
+      .eq("clinic_id", clinic.id).neq("status", "cancelled").gte("starts_at", utc(today)).lt("starts_at", dayEnd).order("starts_at"),
+    sb.from("appointments").select("source, status, created_at, starts_at").eq("clinic_id", clinic.id).or(`created_at.gte.${weekFrom},starts_at.gte.${weekFrom}`),
+    sb.from("conversations").select("patient_id, bot_paused, updated_at, patients!inner(clinic_id, name, phone, wa_id)")
+      .eq("patients.clinic_id", clinic.id).eq("bot_paused", true).order("updated_at", { ascending: false }),
   ]);
 
-  const waiting = (paused ?? []).filter((c) => stillPaused(c));
-  // Booked by Sara this week = visits she created this week (staff bookings excluded).
-  const weekFrom = Date.parse(`${start}T00:00:00Z`) - clinic.utc_offset_minutes * 60_000;
-  const bySara = cal.rows.filter((a) => a.source !== "staff" && Date.parse(a.created_at) >= weekFrom);
-  const late = bySara.filter((a) => afterHours(new Date(a.created_at), clinic.hours, clinic.utc_offset_minutes));
-
-  const first = waiting[0] as unknown as { patient_id: string; patients: { name: string | null; phone: string | null; wa_id: string | null } } | undefined;
-  const { data: thread } = first
-    ? await sb.from("messages").select("id, role, body, created_at, channel").eq("patient_id", first.patient_id).order("id", { ascending: false }).limit(8)
-    : { data: null };
+  const rows = (visits ?? []) as unknown as Row[];
+  const waiting = ((paused ?? []) as unknown as { patient_id: string; bot_paused: boolean; updated_at: string; patients: Person }[]).filter((c) => stillPaused(c));
+  const w = week ?? [];
+  const bySara = w.filter((a) => a.source !== "staff" && a.created_at >= weekFrom).length;
+  const noShows = w.filter((a) => a.status === "no_show" && a.starts_at >= weekFrom && a.starts_at < dayEnd).length;
+  const multi = clinic.dentists.filter((d) => d.active).length > 1;
+  const groups = multi
+    ? clinic.dentists.filter((d) => rows.some((r) => r.dentist_id === d.id)).map((d) => ({ key: d.id, label: d.name, color: d.color, rows: rows.filter((r) => r.dentist_id === d.id) }))
+    : [{ key: "all", label: "", color: null, rows }];
 
   return (
     <>
-      <PageHeader title="Today">
-        <p className="text-xs text-muted-foreground max-sm:hidden">{clinic.name} · Week of {LONG.format(new Date(`${start}T00:00:00Z`))}</p>
+      <PageHeader title={<>Today <span className="ms-1 font-normal text-muted-foreground max-sm:hidden">{LONG.format(new Date(`${today}T00:00:00Z`))}</span></>}>
+        <NewBooking setup={deskSetup(clinic)} />
       </PageHeader>
-      <PageBody className="overflow-y-auto p-3 sm:p-4 xl:overflow-hidden">
-        <div className="flex shrink-0 flex-wrap gap-x-8 gap-y-2 pb-3">
-          <Tally value={bySara.length} label="Booked by Sara this week" />
-          <Tally value={late.length} label="After hours" />
-          <Tally value={waiting.length} label="Need staff" />
+      <PageBody className="gap-3 overflow-y-auto p-3 sm:p-4 lg:overflow-hidden">
+        <div className="grid shrink-0 grid-cols-2 gap-3 lg:grid-cols-4">
+          <Stat label="Visits today" value={rows.length} />
+          <Stat label="Booked by Sara this week" value={bySara} />
+          <Stat label="Needs staff" value={waiting.length} alert={waiting.length > 0} href="/dashboard/inbox?f=staff" />
+          <Stat label="No-shows this week" value={noShows} />
         </div>
-        <div className="grid min-h-0 grid-cols-1 gap-4 xl:flex-1 xl:grid-cols-[340px_1fr]">
-          <section className="slip relative flex min-h-0 flex-col max-xl:h-80">
-            {first ? (
-              <>
-                <header className="shrink-0 border-b px-4 py-3">
-                  <span className="label">{first.patients.wa_id ? "WhatsApp" : "Website"} · waiting for staff</span>
-                  <h2 className="text-base font-semibold">{who(first.patients)}</h2>
-                </header>
-                <div className="flex min-h-0 flex-1 flex-col justify-end gap-3 overflow-hidden px-4 py-3">
-                  {(thread ?? []).reverse().map((m, i, all) => (
-                    <Line key={m.id} role={m.role} who={m.role === "assistant" ? "Sara" : m.role === "patient" ? "Patient" : m.role === "staff" ? "Staff" : "Note"}>
-                      {m.role === "assistant" && i === all.length - 1 ? <Typed text={m.body} at={m.created_at} /> : m.body}
-                    </Line>
-                  ))}
-                </div>
-                <footer className="flex shrink-0 items-center justify-between border-t px-4 py-3">
-                  <span className="label">{waiting.length > 1 ? `${waiting.length - 1} more waiting` : "Only one waiting"}</span>
-                  <Link href={`/dashboard/inbox?p=${first.patient_id}`} className="rounded-full bg-primary px-4 py-2 text-[13px] font-medium text-primary-foreground">
-                    Open chat
-                  </Link>
-                </footer>
-              </>
-            ) : (
-              <div className="flex flex-1 flex-col justify-center p-6">
-                <h2 className="text-base font-semibold">Nobody waiting.</h2>
-                <p className="mt-1 text-sm text-muted-foreground">When Sara hands a chat to your team, it shows up here and turns red on the book.</p>
-              </div>
+        <div className="grid min-h-0 grid-cols-1 gap-3 lg:flex-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] lg:grid-rows-[minmax(0,1fr)]">
+          <Pane title="Needs staff" count={waiting.length}>
+            {waiting.length === 0 ? <Empty>Nobody waiting. When Sara hands a chat to your team, it shows up here.</Empty> : (
+              <ul className="divide-y">
+                {waiting.map((c) => (
+                  <li key={c.patient_id}>
+                    <Link href={`/dashboard/inbox?p=${c.patient_id}`} className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted">
+                      <span className="size-2 shrink-0 rounded-full bg-alert" />
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium">{who(c.patients)}</span>
+                      <span className="text-xs text-muted-foreground">{c.patients.wa_id ? "WhatsApp" : "Website"}</span>
+                      <span className="font-mono text-xs text-muted-foreground tabular-nums">{localTime(new Date(c.updated_at), off)}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
             )}
-          </section>
-          <div className="min-h-0 max-xl:h-[34rem]">
-            <WeekCalendar fill title={`Week of ${LONG.format(new Date(`${start}T00:00:00Z`))}`} days={cal.days} blocks={cal.blocks} from={cal.from} to={cal.to} now={cal.now} />
-          </div>
+          </Pane>
+          <Pane title="Today's visits" count={rows.length} action={<Link href="/dashboard/calendar" className="text-xs text-muted-foreground hover:text-foreground">Calendar</Link>}>
+            {rows.length === 0 ? <Empty>No visits booked for today.</Empty> : groups.map((g) => (
+              <div key={g.key}>
+                {g.label && (
+                  <h3 className="sticky top-0 z-10 flex items-center gap-2 border-b bg-card px-4 py-1.5 text-xs font-semibold">
+                    <span className="size-2 rounded-full" style={{ background: g.color ?? "var(--primary)" }} />{g.label}
+                  </h3>
+                )}
+                <ul className="divide-y">
+                  {g.rows.map((r) => (
+                    <li key={r.id} className={cn("flex items-center gap-3 px-4 py-2", r.status === "no_show" && "opacity-60")}>
+                      <span className="w-11 shrink-0 font-mono text-xs tabular-nums">{localTime(new Date(r.starts_at), off)}</span>
+                      <Link href={`/dashboard/patients/${r.patient_id}`} className="min-w-0 flex-1 truncate text-sm hover:underline">
+                        <span className="font-medium">{who(r.patients)}</span> <span className="text-muted-foreground">· {r.service}</span>
+                      </Link>
+                      {r.status === "booked" ? (
+                        <span className="flex shrink-0 gap-1">
+                          <form action={setVisitStatus.bind(null, r.id, "completed")}><Button size="sm" variant="outline" className="h-7">Arrived</Button></form>
+                          <form action={setVisitStatus.bind(null, r.id, "no_show")}><Button size="sm" variant="ghost" className="h-7">No-show</Button></form>
+                        </span>
+                      ) : (
+                        <span className="shrink-0 text-xs text-muted-foreground">{r.status === "completed" ? "Arrived" : "No-show"}</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </Pane>
         </div>
       </PageBody>
     </>
   );
 }
+
+function Stat({ label, value, alert, href }: { label: string; value: number; alert?: boolean; href?: string }) {
+  const body = (
+    <>
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <strong className={cn("block text-2xl font-semibold tracking-tight tabular-nums", alert && "text-alert")}>{value}</strong>
+    </>
+  );
+  const cls = "rounded-xl border bg-card px-4 py-3";
+  return href ? <Link href={href} className={cn(cls, "hover:border-foreground/30")}>{body}</Link> : <div className={cls}>{body}</div>;
+}
+
+function Pane({ title, count, action, children }: { title: string; count: number; action?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border bg-card max-lg:max-h-[28rem]">
+      <header className="flex h-11 shrink-0 items-center gap-2 border-b px-4">
+        <h2 className="text-sm font-semibold">{title}</h2>
+        <span className="text-xs text-muted-foreground tabular-nums">{count}</span>
+        <span className="ms-auto">{action}</span>
+      </header>
+      <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+    </section>
+  );
+}
+
+const Empty = ({ children }: { children: React.ReactNode }) => <p className="p-4 text-sm text-muted-foreground">{children}</p>;

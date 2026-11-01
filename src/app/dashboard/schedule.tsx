@@ -1,7 +1,7 @@
 "use client";
 
 // Calendar grid for the desk: columns are dentists (day view) or days (week view). Only the grid pane scrolls.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronLeftIcon, ChevronRightIcon, PlusIcon } from "lucide-react";
@@ -174,5 +174,17 @@ export function VisitSheet({ visit, closeHref, setup }: { visit: SheetVisit; clo
       </SheetContent>
       <BookingDialog setup={setup} open={moving} onOpenChange={setMoving} move={{ id: visit.id, serviceId: visit.serviceId, patient: visit.patient }} />
     </Sheet>
+  );
+}
+
+// "Book visit" for one known patient (inbox panel, patient profile).
+export function BookFor({ setup, patient, label = "Book visit", variant = "default" }: { setup: DeskSetup; patient: { id: string; name: string | null }; label?: string; variant?: "default" | "outline" }) {
+  const [open, setOpen] = useState(false);
+  const prefill = useMemo(() => ({ patient }), [patient]);
+  return (
+    <>
+      <Button size="sm" variant={variant} onClick={() => setOpen(true)}><PlusIcon />{label}</Button>
+      <BookingDialog setup={setup} open={open} onOpenChange={setOpen} prefill={prefill} />
+    </>
   );
 }

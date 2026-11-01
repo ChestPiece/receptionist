@@ -1,124 +1,164 @@
 import Link from "next/link";
-import { Line, Typed } from "@/components/ledger";
-import { stillPaused } from "@/lib/agent";
-import { desk, who } from "@/lib/dashboard";
+import { ArrowLeftIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { localTime } from "@/lib/slots";
+import { stillPaused } from "@/lib/agent";
+import { deskConfig } from "@/lib/clinics";
+import { desk, deskSetup, who } from "@/lib/dashboard";
+import { localDate, localTime } from "@/lib/slots";
 import { cn } from "@/lib/utils";
 import { PageBody, PageHeader } from "../page-frame";
+import { BookFor } from "../schedule";
+import { Thread, type ThreadMsg } from "../thread";
 import { ReplyBox } from "./reply-box";
 import { setPaused } from "../actions";
 
 export const metadata = { title: "Inbox" };
 
-type Msg = { id: number; patient_id: string; channel: "whatsapp" | "web"; role: "patient" | "assistant" | "staff" | "system"; body: string; created_at: string };
-type Person = { id: string; name: string | null; phone: string | null; wa_id: string | null };
-type Row = { patient_id: string; name: string | null; phone: string | null; wa_id: string | null; channel: Msg["channel"]; role: Msg["role"]; body: string; created_at: string; last_id: number; bot_paused: boolean | null; updated_at: string | null };
-const SPEAKER = { patient: "Patient", assistant: "Sara", staff: "Staff", system: "Note" } as const;
+type Channel = "whatsapp" | "web";
+type Row = { patient_id: string; name: string | null; phone: string | null; wa_id: string | null; channel: Channel; role: ThreadMsg["role"]; body: string; created_at: string; last_id: number; bot_paused: boolean | null; updated_at: string | null };
+const TABS = [
+  { f: undefined, label: "All" },
+  { f: "staff", label: "Needs staff" },
+  { f: "whatsapp", label: "WhatsApp" },
+  { f: "web", label: "Website" },
+] as const;
+const DAY = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
 
 export default async function Inbox({ searchParams }: PageProps<"/dashboard/inbox">) {
-  const { sb, clinic } = await desk();
-  if (!clinic) return null;
+  const { sb, clinic: picked } = await desk();
+  if (!picked) return null;
   const { p, f } = (await searchParams) as { p?: string; f?: string };
 
-  const threadOf = (id: string) => sb.from("messages").select("id, patient_id, channel, role, body, created_at").eq("patient_id", id).order("id", { ascending: false }).limit(200);
+  const threadOf = (id: string) => sb.from("messages").select("id, role, body, created_at").eq("patient_id", id).order("id", { ascending: false }).limit(200);
   // One row per patient, newest first (inbox_list, RLS applies). When a chat is picked, its thread loads alongside.
-  const [{ data: rows, error }, picked] = await Promise.all([sb.rpc("inbox_list", { clinic: clinic.id }), p ? threadOf(p) : null]);
-  if (error) throw error; // an empty inbox must never hide a failed load (e.g. 0006 not applied)
+  const [{ data: rows, error }, pickedThread, clinic] = await Promise.all([sb.rpc("inbox_list", { clinic: picked.id }), p ? threadOf(p) : null, deskConfig(sb, picked.id)]);
+  if (error) throw error; // an empty inbox must never hide a failed load
+  const off = clinic.utc_offset_minutes;
   const all = (rows ?? []) as Row[];
-  const latest = new Map(all.map((r) => [r.patient_id, r]));
-  const person = new Map<string, Person>(all.map((r) => [r.patient_id, { id: r.patient_id, name: r.name, phone: r.phone, wa_id: r.wa_id }]));
   const waiting = new Set(all.filter((r) => stillPaused(r.updated_at ? { bot_paused: !!r.bot_paused, updated_at: r.updated_at } : null)).map((r) => r.patient_id));
-  const ids = [...latest.keys()];
-  const list = ids.filter((id) => f !== "staff" || waiting.has(id));
-  const open = p && person.has(p) ? p : list[0];
+  const list = all.filter((r) => (f === "staff" ? waiting.has(r.patient_id) : f === "whatsapp" || f === "web" ? r.channel === f : true));
+  const current = all.find((r) => r.patient_id === p) ?? list[0];
+  const open = current?.patient_id;
 
-  const { data: thread } = open === p && picked ? picked : open ? await threadOf(open) : { data: null };
-  const lines = ((thread ?? []) as Msg[]).reverse();
-  const current = open ? person.get(open) : undefined;
+  const [{ data: thread }, { data: upcoming }, { data: person }] = open
+    ? await Promise.all([
+        open === p && pickedThread ? pickedThread : threadOf(open),
+        sb.from("appointments").select("id, service, starts_at, dentist_id").eq("patient_id", open).eq("status", "booked").gt("starts_at", new Date().toISOString()).order("starts_at").limit(5),
+        sb.from("patients").select("tags, notes").eq("id", open).maybeSingle(),
+      ])
+    : [{ data: null }, { data: null }, { data: null }];
+  const time = (iso: string) => localTime(new Date(iso), off);
+  const lines = (thread ?? []).reverse().map((m) => ({ ...m, time: time(m.created_at) })) as ThreadMsg[];
   const isPaused = open ? waiting.has(open) : false;
-  const time = (iso: string) => localTime(new Date(iso), clinic.utc_offset_minutes);
   const href = (q: Record<string, string | undefined>) => `/dashboard/inbox?${new URLSearchParams(Object.entries({ f, ...q }).filter((e): e is [string, string] => !!e[1]))}`;
+  const multi = clinic.dentists.filter((d) => d.active).length > 1;
 
   return (
     <>
-      <PageHeader title="Inbox">
-        <div className="flex gap-1 text-sm" role="group" aria-label="Filter">
-          <Link href={href({ f: undefined, p: open })} aria-current={f !== "staff" ? "true" : undefined} className={cn("rounded-full px-3 py-1.5 text-muted-foreground", f !== "staff" && "bg-foreground text-background")}>All</Link>
-          <Link href={href({ f: "staff", p: undefined })} aria-current={f === "staff" ? "true" : undefined} className={cn("rounded-full px-3 py-1.5 text-muted-foreground", f === "staff" && "bg-alert text-white")}>Needs staff · {waiting.size}</Link>
+      <PageHeader title="Inbox" />
+      <PageBody className="grid grid-cols-1 grid-rows-[minmax(0,1fr)] lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[300px_minmax(0,1fr)_280px]">
+        {/* List: hidden on phones while a chat is open. */}
+        <div className={cn("flex min-h-0 flex-col border-e", p && "max-lg:hidden")}>
+          <nav className="flex shrink-0 gap-1 overflow-x-auto border-b px-2 py-2" aria-label="Filter">
+            {TABS.map((t) => (
+              <Link key={t.label} href={href({ f: t.f, p: undefined })} aria-current={f === t.f ? "true" : undefined}
+                className={cn("shrink-0 rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted", f === t.f && "bg-muted text-foreground")}>
+                {t.label}{t.f === "staff" && waiting.size > 0 && <span className="ms-1 text-alert">{waiting.size}</span>}
+              </Link>
+            ))}
+          </nav>
+          <ScrollArea className="min-h-0 flex-1">
+            <ul className="divide-y">
+              {list.length === 0 && <li className="p-4 text-sm text-muted-foreground">{f === "staff" ? "Nobody is waiting for staff." : "No chats here."}</li>}
+              {list.map((m) => (
+                <li key={m.patient_id}>
+                  <Link href={href({ p: m.patient_id })} aria-current={m.patient_id === open ? "true" : undefined}
+                    className={cn("grid gap-0.5 px-3 py-2.5 hover:bg-muted/60", m.patient_id === open && "bg-muted")}>
+                    <span className="flex items-center gap-2">
+                      {waiting.has(m.patient_id) && <span className="size-2 shrink-0 rounded-full bg-alert" aria-label="Needs staff" />}
+                      <span className="truncate text-sm font-medium">{who(m)}</span>
+                      <span className="ms-auto shrink-0 font-mono text-[11px] text-muted-foreground tabular-nums">{time(m.created_at)}</span>
+                    </span>
+                    <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <ChannelTag channel={m.channel} />
+                      <span dir="auto" className="truncate">{m.body}</span>
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </ScrollArea>
         </div>
-      </PageHeader>
 
-      <PageBody className="grid grid-cols-1 grid-rows-[minmax(0,1fr)] gap-3 p-3 sm:p-4 lg:grid-cols-[320px_1fr]">
-        <ScrollArea className={cn("slip min-h-0", open && p && "max-lg:hidden")}>
-        <ul className="divide-y">
-          {list.length === 0 && <li className="p-5 text-sm text-muted-foreground">{f === "staff" ? "Nobody is waiting for staff." : "No chats yet."}</li>}
-          {list.map((id) => {
-            const m = latest.get(id)!;
-            return (
-              <li key={id}>
-                <Link href={href({ p: id })} aria-current={id === open ? "true" : undefined} className={cn("grid gap-1 px-4 py-3 transition-colors hover:bg-rule/60", id === open && "bg-rule/80")}>
-                  <span className="flex items-center gap-2">
-                    <span className="truncate text-sm font-medium">{who(person.get(id) ?? null)}</span>
-                    <span className="ms-auto font-mono text-[11px] text-muted-foreground tabular-nums">{time(m.created_at)}</span>
-                  </span>
-                  <span className="flex items-center gap-2">
-                    <Channel channel={m.channel} />
-                    {waiting.has(id) ? <span className="text-xs font-medium text-alert">Needs you</span> : <span className="text-xs text-muted-foreground">Sara</span>}
-                  </span>
-                  <span dir="auto" className="line-clamp-1 text-sm text-muted-foreground">{m.body}</span>
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-        </ScrollArea>
-
-        {open && current ? (
-          <section className={cn("slip relative flex min-h-0 flex-col", !p && "max-lg:hidden")}>
-            <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
-              <div>
-                <Link href={href({ p: undefined })} className="label lg:hidden">← All chats</Link>
-                <span className="label block max-lg:hidden">{current.wa_id ? `WhatsApp · +${current.wa_id.replace(/@.*/, "")}` : `Website${current.phone ? ` · ${current.phone}` : ""}`}</span>
-                <h2 className="text-base font-semibold">
-                  <Link href={`/dashboard/patients/${current.id}`} className="hover:underline">{who(current)}</Link>
-                </h2>
-              </div>
-              {current.wa_id && (
-                <form action={setPaused.bind(null, current.id, !isPaused)}>
-                  <button className={cn("rounded-full px-4 py-2 text-[13px] font-medium", isPaused ? "border border-foreground" : "bg-foreground text-background")}>
-                    {isPaused ? "Hand back to Sara" : "Take over"}
-                  </button>
+        {current ? (
+          <>
+            <section className={cn("flex min-h-0 flex-col", !p && "max-lg:hidden")}>
+              <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
+                <Button variant="ghost" size="icon" asChild className="lg:hidden"><Link href={href({ p: undefined })} aria-label="All chats"><ArrowLeftIcon /></Link></Button>
+                <div className="min-w-0 flex-1">
+                  <Link href={`/dashboard/patients/${current.patient_id}`} className="block truncate text-sm font-semibold hover:underline">{who(current)}</Link>
+                  <span className="block truncate text-xs text-muted-foreground">{current.wa_id ? `WhatsApp · +${current.wa_id.replace(/@.*/, "")}` : `Website${current.phone ? ` · ${current.phone}` : ""}`}{isPaused ? " · staff have this chat" : " · Sara is answering"}</span>
+                </div>
+                <form action={setPaused.bind(null, current.patient_id, !isPaused)}>
+                  <Button size="sm" variant={isPaused ? "outline" : "default"}>{isPaused ? "Hand back to Sara" : "Take over"}</Button>
                 </form>
-              )}
-            </header>
-            <div aria-live="polite" className="flex min-h-0 flex-1 flex-col-reverse overflow-y-auto px-4 py-3">
-              <div className="flex flex-col gap-3">
-                {lines.map((m, i) => (
-                  <Line key={m.id} role={m.role} who={SPEAKER[m.role]}>
-                    {m.role === "assistant" && i === lines.length - 1 ? <Typed text={m.body} at={m.created_at} /> : m.body}
-                  </Line>
-                ))}
+              </header>
+              <div aria-live="polite" className="flex min-h-0 flex-1 flex-col-reverse overflow-y-auto">
+                <Thread lines={lines} />
               </div>
-            </div>
-            <footer className="shrink-0 border-t px-4 py-3">
-              {current.wa_id ? (
-                <ReplyBox patientId={current.id} paused={isPaused} />
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Website chats can&apos;t be answered from here yet. {current.phone ? <>Call or WhatsApp <span className="font-mono">{current.phone}</span>.</> : "No phone number left yet."}
-                </p>
+              <footer className="shrink-0 border-t p-3">
+                <ReplyBox patientId={current.patient_id} paused={isPaused} channel={current.wa_id ? "WhatsApp" : "the website chat"} />
+              </footer>
+            </section>
+
+            <aside className="flex min-h-0 flex-col gap-4 overflow-y-auto border-s p-4 max-xl:hidden">
+              <div>
+                <h2 className="text-sm font-semibold">Upcoming visits</h2>
+                <ul className="mt-2 grid gap-2 text-sm">
+                  {(upcoming ?? []).length === 0 && <li className="text-muted-foreground">None booked.</li>}
+                  {(upcoming ?? []).map((v) => {
+                    const s = new Date(v.starts_at);
+                    return (
+                      <li key={v.id}>
+                        <Link href={`/dashboard/calendar?d=${localDate(s, off)}&a=${v.id}`} className="block rounded-lg border px-3 py-2 hover:bg-muted">
+                          <span className="block font-medium">{v.service}</span>
+                          <span className="block text-xs text-muted-foreground">
+                            {DAY.format(new Date(`${localDate(s, off)}T00:00:00Z`))} · {localTime(s, off)}
+                            {multi && ` · ${clinic.dentists.find((d) => d.id === v.dentist_id)?.name ?? ""}`}
+                          </span>
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+                <div className="mt-2"><BookFor setup={deskSetup(clinic)} patient={{ id: current.patient_id, name: current.name }} variant="outline" /></div>
+              </div>
+              {(person?.tags ?? []).length > 0 && (
+                <div>
+                  <h2 className="text-sm font-semibold">Tags</h2>
+                  <div className="mt-2 flex flex-wrap gap-1">{(person!.tags as string[]).map((t) => <span key={t} className="rounded-full border px-2 py-0.5 text-xs">{t}</span>)}</div>
+                </div>
               )}
-            </footer>
-          </section>
-        ) : null}
+              {person?.notes && (
+                <div>
+                  <h2 className="text-sm font-semibold">Staff notes</h2>
+                  <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">{person.notes}</p>
+                </div>
+              )}
+              <Link href={`/dashboard/patients/${current.patient_id}`} className="text-sm text-muted-foreground underline underline-offset-2 hover:text-foreground">Open profile</Link>
+            </aside>
+          </>
+        ) : (
+          <p className="p-6 text-sm text-muted-foreground max-lg:hidden">No chat picked.</p>
+        )}
       </PageBody>
     </>
   );
 }
 
-const Channel = ({ channel }: { channel: "whatsapp" | "web" }) => (
-  <span className={cn("rounded-full px-2 py-px text-[11.5px] font-medium text-foreground", channel === "whatsapp" ? "bg-sage-soft" : "bg-web-soft")}>
+const ChannelTag = ({ channel }: { channel: Channel }) => (
+  <span className={cn("shrink-0 rounded px-1.5 py-px text-[10.5px] font-medium text-foreground", channel === "whatsapp" ? "bg-sage-soft" : "bg-web-soft")}>
     {channel === "whatsapp" ? "WhatsApp" : "Website"}
   </span>
 );

@@ -1,91 +1,88 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Line } from "@/components/ledger";
-import { desk, who } from "@/lib/dashboard";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { deskConfig } from "@/lib/clinics";
+import { desk, deskSetup, who } from "@/lib/dashboard";
 import { localDate, localTime } from "@/lib/slots";
+import { cn } from "@/lib/utils";
 import { PageBody, PageHeader } from "../../page-frame";
+import { BookFor } from "../../schedule";
+import { Thread, type ThreadMsg } from "../../thread";
 import { savePatient } from "../../actions";
 
 export const metadata = { title: "Patient" };
 
 const DAY = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
-const STATUS: Record<string, string> = { booked: "Booked", completed: "Came in", no_show: "No-show", cancelled: "Cancelled" };
-const SPEAKER = { patient: "Patient", assistant: "Sara", staff: "Staff", system: "Note" } as const;
-const field = "h-10 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring";
+const STATUS: Record<string, string> = { booked: "Booked", completed: "Arrived", no_show: "No-show", cancelled: "Cancelled" };
 
 export default async function Patient({ params }: PageProps<"/dashboard/patients/[id]">) {
-  const { sb, clinic } = await desk();
-  if (!clinic) return null;
+  const { sb, clinic: picked } = await desk();
+  if (!picked) return null;
   const { id } = await params;
-  const [{ data: p }, { data: visits }, { data: msgs }] = await Promise.all([
-    sb.from("patients").select("id, clinic_id, name, phone, email, wa_id, notes, tags, opted_out, created_at").eq("id", id).maybeSingle(),
-    sb.from("appointments").select("id, service, starts_at, status").eq("patient_id", id).order("starts_at", { ascending: false }).limit(50),
-    sb.from("messages").select("id, role, body").eq("patient_id", id).order("id", { ascending: false }).limit(60),
+  const [{ data: p }, { data: visits }, { data: msgs }, clinic] = await Promise.all([
+    sb.from("patients").select("id, clinic_id, name, phone, email, wa_id, notes, tags, opted_out").eq("id", id).maybeSingle(),
+    sb.from("appointments").select("id, service, starts_at, status, dentist_id").eq("patient_id", id).order("starts_at", { ascending: false }).limit(50),
+    sb.from("messages").select("id, role, body, created_at").eq("patient_id", id).order("id", { ascending: false }).limit(60),
+    deskConfig(sb, picked.id),
   ]);
   if (!p || p.clinic_id !== clinic.id) notFound();
   const off = clinic.utc_offset_minutes;
+  const multi = clinic.dentists.filter((d) => d.active).length > 1;
+  const lines = (msgs ?? []).reverse().map((m) => ({ ...m, time: localTime(new Date(m.created_at), off) })) as ThreadMsg[];
+  const now = new Date().toISOString();
 
   return (
     <>
       <PageHeader title={who(p)}>
-        <Link href="/dashboard/patients" className="text-xs text-muted-foreground hover:text-foreground">← Patients</Link>
+        <Button size="sm" variant="ghost" asChild className="max-sm:hidden"><Link href={`/dashboard/inbox?p=${p.id}`}>Open chat</Link></Button>
+        <BookFor setup={deskSetup(clinic)} patient={{ id: p.id, name: p.name }} />
       </PageHeader>
-      <PageBody className="overflow-y-auto p-3 sm:p-4">
-      <p className="mb-3 text-sm text-muted-foreground">
-        {p.wa_id ? `WhatsApp +${p.wa_id.replace(/@.*/, "")}` : "Website chat"}
-        {p.opted_out && " · opted out of follow-ups (sent STOP)"}
-      </p>
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[360px_1fr]">
-        <div className="grid content-start gap-6">
-          <form action={savePatient.bind(null, p.id)} className="slip grid gap-3 p-5">
-            <h2 className="font-serif text-xl">Details</h2>
-            <label className="grid gap-1 text-sm">Name<input name="name" defaultValue={p.name ?? ""} className={field} /></label>
-            <label className="grid gap-1 text-sm">Phone<input name="phone" type="tel" defaultValue={p.phone ?? ""} className={`${field} font-mono`} /></label>
-            <label className="grid gap-1 text-sm">Email<input name="email" type="email" defaultValue={p.email ?? ""} className={field} /></label>
-            <label className="grid gap-1 text-sm">
-              Tags <span className="text-xs text-muted-foreground">comma separated, e.g. vip, aligners</span>
-              <input name="tags" defaultValue={(p.tags ?? []).join(", ")} className={field} />
-            </label>
-            <label className="grid gap-1 text-sm">
-              Staff notes <span className="text-xs text-muted-foreground">front desk only, Sara never sees these</span>
-              <textarea name="notes" rows={4} defaultValue={p.notes ?? ""} className={`${field} h-auto py-2`} />
-            </label>
-            <button className="h-10 justify-self-start rounded-full bg-primary px-5 text-[13px] font-medium text-primary-foreground">Save</button>
+      <PageBody className="grid grid-cols-1 overflow-y-auto lg:grid-cols-[360px_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)] lg:overflow-hidden">
+        <div className="flex flex-col gap-4 border-e p-3 sm:p-4 lg:min-h-0 lg:overflow-y-auto">
+          <form action={savePatient.bind(null, p.id)} className="grid gap-3">
+            <p className="text-xs text-muted-foreground">
+              {p.wa_id ? `WhatsApp +${p.wa_id.replace(/@.*/, "")}` : "Website chat"}{p.opted_out && " · opted out of follow-ups (sent STOP)"}
+            </p>
+            <div className="grid gap-1.5"><Label htmlFor="pf-name">Name</Label><Input id="pf-name" name="name" defaultValue={p.name ?? ""} /></div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="grid gap-1.5"><Label htmlFor="pf-phone">Phone</Label><Input id="pf-phone" name="phone" type="tel" defaultValue={p.phone ?? ""} className="font-mono" /></div>
+              <div className="grid gap-1.5"><Label htmlFor="pf-email">Email</Label><Input id="pf-email" name="email" type="email" defaultValue={p.email ?? ""} /></div>
+            </div>
+            <div className="grid gap-1.5"><Label htmlFor="pf-tags">Tags <span className="font-normal text-muted-foreground">comma separated</span></Label><Input id="pf-tags" name="tags" defaultValue={(p.tags ?? []).join(", ")} /></div>
+            <div className="grid gap-1.5"><Label htmlFor="pf-notes">Staff notes <span className="font-normal text-muted-foreground">Sara never sees these</span></Label><Textarea id="pf-notes" name="notes" rows={3} defaultValue={p.notes ?? ""} /></div>
+            <Button size="sm" className="justify-self-start">Save</Button>
           </form>
 
-          <section className="slip p-5">
-            <h2 className="font-serif text-xl">Visits</h2>
-            <ul className="mt-3 divide-y divide-dashed text-sm">
-              {(visits ?? []).length === 0 && <li className="py-2 text-muted-foreground">No visits yet.</li>}
+          <section>
+            <h2 className="text-sm font-semibold">Visits</h2>
+            <ul className="mt-2 divide-y rounded-xl border text-sm">
+              {(visits ?? []).length === 0 && <li className="px-3 py-2 text-muted-foreground">No visits yet.</li>}
               {(visits ?? []).map((v) => {
                 const s = new Date(v.starts_at);
+                const date = localDate(s, off);
+                const live = v.status === "booked" && v.starts_at > now;
                 return (
-                  <li key={v.id} className="flex items-baseline justify-between gap-3 py-2">
-                    <span>
-                      {v.service}
-                      <span className="block font-mono text-xs text-muted-foreground">{DAY.format(new Date(`${localDate(s, off)}T00:00:00Z`))} · {localTime(s, off)}</span>
-                    </span>
-                    <span className={v.status === "no_show" ? "text-alert" : "text-muted-foreground"}>{STATUS[v.status] ?? v.status}</span>
+                  <li key={v.id}>
+                    <Link href={`/dashboard/calendar?d=${date}&a=${v.id}`} className={cn("flex items-baseline justify-between gap-3 px-3 py-2 hover:bg-muted", !live && "text-muted-foreground")}>
+                      <span className="min-w-0">
+                        <span className={cn("block truncate", live && "font-medium text-foreground")}>{v.service}</span>
+                        <span className="block font-mono text-xs">{DAY.format(new Date(`${date}T00:00:00Z`))} · {localTime(s, off)}{multi && ` · ${clinic.dentists.find((d) => d.id === v.dentist_id)?.name ?? ""}`}</span>
+                      </span>
+                      <span className={cn("shrink-0 text-xs", v.status === "no_show" && "text-alert")}>{live ? "Move / cancel" : STATUS[v.status] ?? v.status}</span>
+                    </Link>
                   </li>
                 );
               })}
             </ul>
           </section>
         </div>
-
-        <section className="slip relative flex flex-col p-5">
-          <div className="flex items-center justify-between">
-            <h2 className="font-serif text-xl">Conversation</h2>
-            <Link href={`/dashboard/inbox?p=${p.id}`} className="text-sm text-muted-foreground underline underline-offset-2 hover:text-foreground">Open in inbox</Link>
-          </div>
-          <div className="mt-4 flex flex-col gap-3">
-            {(msgs ?? []).length === 0 && <p className="text-sm text-muted-foreground">No messages.</p>}
-            {(msgs ?? []).reverse().map((m) => (
-              <Line key={m.id} role={m.role} who={SPEAKER[m.role as keyof typeof SPEAKER]}>{m.body}</Line>
-            ))}
-          </div>
+        <section className="flex min-h-0 flex-col max-lg:min-h-96">
+          <h2 className="flex h-11 shrink-0 items-center border-b px-4 text-sm font-semibold">Conversation</h2>
+          <div className="min-h-0 flex-1 overflow-y-auto"><Thread lines={lines} /></div>
         </section>
-      </div>
       </PageBody>
     </>
   );

@@ -2,6 +2,7 @@
 
 // One dialog for booking a new visit and moving an existing one. Free times come from the same engine Sara uses.
 import { useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { CalendarIcon, UserPlusIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -25,40 +26,44 @@ type Patient = { id: string; name: string | null; phone?: string | null };
 const LONG = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
-export function BookingDialog({ setup, open, onOpenChange, prefill, move }: {
+type Props = {
   setup: DeskSetup; open: boolean; onOpenChange: (o: boolean) => void; prefill?: Prefill;
   move?: { id: string; serviceId: string | null; patient: string };
-}) {
+};
+
+// The form mounts fresh on every open, so a cell click always starts from its own prefill.
+export function BookingDialog(props: Props) {
+  return (
+    <Dialog open={props.open} onOpenChange={props.onOpenChange}>
+      <DialogContent className="max-h-[90dvh] gap-4 overflow-y-auto sm:max-w-lg">
+        {props.open && <BookingForm {...props} />}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function BookingForm({ setup, onOpenChange, prefill, move }: Props) {
   const multi = setup.dentists.length > 1;
   const [patient, setPatient] = useState<Patient | null>(prefill?.patient ?? null);
   const [serviceId, setServiceId] = useState(move?.serviceId ?? "");
   const [dentistId, setDentistId] = useState(prefill?.dentistId ?? "any");
   const [date, setDate] = useState(prefill?.date ?? setup.today);
   const [time, setTime] = useState(prefill?.time ?? "");
-  const [times, setTimes] = useState<Free[] | null>(null);
+  const [found, setFound] = useState<{ key: string; times: Free[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
-  // Reset each time it opens, so a cell click always shows its own prefill.
-  useEffect(() => {
-    if (!open) return;
-    setPatient(prefill?.patient ?? null);
-    setServiceId(move?.serviceId ?? "");
-    setDentistId(prefill?.dentistId ?? "any");
-    setDate(prefill?.date ?? setup.today);
-    setTime(prefill?.time ?? "");
-    setError(null);
-  }, [open, prefill, move, setup.today]);
-
   const dentists = setup.dentists.filter((d) => !serviceId || d.service_ids.includes(serviceId));
   const sid = serviceId || move?.serviceId;
+  // Times belong to the query that fetched them; a stale answer never shows for a newer pick.
+  const key = `${sid}|${date}|${dentistId}`;
+  const times = found?.key === key ? found.times : null;
   useEffect(() => {
-    if (!open || !sid) return setTimes(null);
+    if (!sid) return;
     let live = true;
-    setTimes(null);
-    freeTimes({ serviceId: sid, date, dentistId: dentistId === "any" ? null : dentistId, ignoreId: move?.id }).then((t) => live && setTimes(t));
+    freeTimes({ serviceId: sid, date, dentistId: dentistId === "any" ? null : dentistId, ignoreId: move?.id }).then((t) => live && setFound({ key, times: t }));
     return () => { live = false; };
-  }, [open, sid, date, dentistId, move?.id]);
+  }, [key, sid, date, dentistId, move?.id]);
 
   const ready = (move || patient) && sid && time && times?.some((t) => t.time === time);
   const submit = () => start(async () => {
@@ -72,8 +77,7 @@ export function BookingDialog({ setup, open, onOpenChange, prefill, move }: {
   });
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90dvh] gap-4 overflow-y-auto sm:max-w-lg">
+    <>
         <DialogHeader>
           <DialogTitle>{move ? "Move visit" : "New booking"}</DialogTitle>
           <DialogDescription>{move ? move.patient : "Only free times are offered, the same ones Sara offers."}</DialogDescription>
@@ -143,8 +147,7 @@ export function BookingDialog({ setup, open, onOpenChange, prefill, move }: {
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Close</Button>
           <Button disabled={!ready || pending} onClick={submit}>{pending ? "Saving…" : move ? "Move visit" : "Book visit"}</Button>
         </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    </>
   );
 }
 
@@ -159,10 +162,11 @@ function PatientPicker({ value, onChange }: { value: Patient | null; onChange: (
   const [pending, start] = useTransition();
 
   useEffect(() => {
-    if (q.trim().length < 2) return setHits([]);
+    if (q.trim().length < 2) return;
     const t = setTimeout(() => searchPatients(q).then(setHits), 200);
     return () => clearTimeout(t);
   }, [q]);
+  const shown = q.trim().length < 2 ? [] : hits;
 
   if (value)
     return (
@@ -198,9 +202,9 @@ function PatientPicker({ value, onChange }: { value: Patient | null; onChange: (
         <Input id="patient-q" placeholder="Search name or phone" value={q} onChange={(e) => setQ(e.target.value)} autoComplete="off" />
         <Button variant="outline" onClick={() => { setAdding(true); setName(/\d/.test(q) ? "" : q); setPhone(/\d/.test(q) ? q : ""); }}><UserPlusIcon />New</Button>
       </div>
-      {hits.length > 0 && (
+      {shown.length > 0 && (
         <ul className="max-h-40 overflow-y-auto rounded-md border text-sm">
-          {hits.map((p) => (
+          {shown.map((p) => (
             <li key={p.id}>
               <button type="button" className="flex w-full justify-between gap-2 px-3 py-2 text-start hover:bg-muted" onClick={() => onChange(p)}>
                 <span>{p.name ?? "No name"}</span><span className="font-mono text-xs text-muted-foreground">{p.phone}</span>
@@ -210,5 +214,39 @@ function PatientPicker({ value, onChange }: { value: Patient | null; onChange: (
         </ul>
       )}
     </div>
+  );
+}
+
+// Patients page: add a walk-in, then open their profile.
+export function AddPatientDialog() {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+  const router = useRouter();
+  return (
+    <>
+      <Button size="sm" onClick={() => setOpen(true)}><UserPlusIcon />Add patient</Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add patient</DialogTitle>
+            <DialogDescription>Their mobile number is also their WhatsApp, so reminders reach them.</DialogDescription>
+          </DialogHeader>
+          <form className="grid gap-3" onSubmit={(e) => { e.preventDefault(); start(async () => {
+            const r = await addPatient({ name, phone });
+            if ("error" in r) return setError(r.error);
+            setOpen(false);
+            router.push(`/dashboard/patients/${r.id}`);
+          }); }}>
+            <div className="grid gap-1.5"><Label htmlFor="ap-name">Full name</Label><Input id="ap-name" value={name} onChange={(e) => setName(e.target.value)} required /></div>
+            <div className="grid gap-1.5"><Label htmlFor="ap-phone">Mobile</Label><Input id="ap-phone" inputMode="tel" placeholder="050 123 4567" value={phone} onChange={(e) => setPhone(e.target.value)} required /></div>
+            {error && <p role="alert" className="text-sm text-alert">{error}</p>}
+            <DialogFooter><Button disabled={pending}>{pending ? "Adding…" : "Add patient"}</Button></DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
