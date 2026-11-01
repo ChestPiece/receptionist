@@ -42,12 +42,12 @@ npm run lint
 - Each clinic is a `clinics` row: config (`slug`, `persona`, `staff_whatsapp`, `ultramsg_instance_id` as digits only, `active`). Its UltraMsg token and webhook secret live in `clinic_secrets` (service role only, never read by the dashboard).
 - New clinic: insert a `clinics` row and a `clinic_secrets` row, then point that UltraMsg instance's webhook at `/api/whatsapp?secret=<its webhook_secret>`. One webhook URL serves every clinic: the payload `instanceId` picks the clinic.
 - Env vars `CLINIC_ID`, `ULTRAMSG_INSTANCE_ID`, `ULTRAMSG_TOKEN`, `STAFF_WHATSAPP` and `WEBHOOK_SECRET` are no longer read. `ALLOWED_SENDERS` is still a global env allowlist.
-- Code: `src/lib/clinics.ts` (loaders, 5-min cache), `src/lib/sara.ts` (agent brain shared by all channels: tools, prompt, `runSara`), `src/lib/agent.ts` (WhatsApp channel handler).
+- Code: `src/lib/clinics.ts` (loaders, 60 s cache), `src/lib/sara.ts` (agent brain shared by all channels: tools, prompt, `runSara`), `src/lib/agent.ts` (WhatsApp channel handler).
 - Every patient/assistant/outbound turn also goes to `messages` (readable transcript for the inbox); token use per run goes to `usage_events`.
 
 ## Web chat (P1, first cut)
 - `/chat/[slug]` (shadcn + AI Elements, `useChat`) talks to `POST /api/chat`, which streams the same Sara agent (`streamSara`) through `createAiSdkUiMessageStreamResponse`. History lives server side in `conversations`, like WhatsApp; the client sends only its newest message.
-- Visitor = anonymous id in localStorage, stored as `patients.web_visitor_id` (`wa_id` is null). Sara asks for a mobile number before a web booking or handoff; web handoff alerts staff on WhatsApp with a callback number and does not pause the chat.
+- Visitor = anonymous id in localStorage, stored as `patients.web_visitor_id` (`wa_id` is null). Sara asks for a mobile number before a web booking or handoff; web handoff pauses the chat and alerts staff on WhatsApp (when `staff_whatsapp` is set) with a callback number. While paused, the visitor polls `GET /api/chat` every 4 s and sees staff replies.
 - Tool results are structured (`find_slots`, `book`), so the chat draws tappable time buttons and a booking card.
 - Chat history comes back after a reload (`GET /api/chat`). Not yet: embeddable `widget.js` + `allowed_origins` check, per-IP rate limit, reminders for web patients.
 - UI components are vendored by the shadcn (`new-york`, Radix) and AI Elements CLIs in `src/components/{ui,ai-elements}` and skipped by ESLint.
@@ -69,14 +69,15 @@ npm run lint
 - Auth: `@supabase/ssr`, `src/proxy.ts` guards `/dashboard`, `/login` (password or magic link, no sign-up). Needs `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in `.env.local` and Vercel.
 - Pages read with the user's client (RLS). Helpers in `src/lib/dashboard.ts`, server actions in `src/app/dashboard/actions.ts`. Clinic switcher (cookie) when a user has several clinics.
   - Today: tallies (booked by Sara this week, after hours, need staff), first waiting chat, this week's book.
-  - Inbox: one row per chat from the `inbox_list` RPC (`0006_speed.sql`, security invoker), the picked thread loads alongside; Needs staff filter (`stillPaused`), Take over / Hand back, staff reply on WhatsApp (sent with the clinic's creds via the service role, logged as role `staff`, appended to the agent history). Website chats are read-only.
-  - Calendar: Saturday-start week, blocks by channel (red = chat waiting for staff), mark came in / no-show / cancel.
+  - Inbox: one row per chat from the `inbox_list` RPC (`0006_speed.sql`, security invoker), the picked thread loads alongside; Needs staff filter (`stillPaused`), Take over / Hand back, staff reply on WhatsApp (sent with the clinic's creds via the service role, logged as role `staff`, appended to the agent history). Staff can also reply in web chats; the visitor sees it within 4 s.
+  - Calendar: Saturday-start. Day view has a column per dentist, Week view a column per day. Blocks by channel (red = chat waiting for staff). The desk can book, move and cancel visits and mark came in / no-show. Patients can be added from the desk.
+  - Settings (tabs: clinic, services, dentists, time off, chat widget): the owner edits, staff see it read only. Every save calls `forgetClinic` so the 60 s clinic cache drops at once.
   - Patients: search + tags, profile with details, staff notes, visits, transcript.
 - Every dashboard route has a `loading.tsx` skeleton; the sidebar is static and the clinic switcher and Needs staff badge stream in behind Suspense.
-- `Live` re-renders pages on Realtime changes to this clinic's messages and appointments, debounced to 1 s (no conversations subscription: a pause flip by another staff member shows on the next event). Not yet: manual booking or moving visits from the dashboard, live replies into web chats.
+- `Live` re-renders pages on Realtime changes to this clinic's messages and appointments, debounced to 1 s (no conversations subscription: a pause flip by another staff member shows on the next event).
 
 ## How `handleMessage` works (`src/lib/agent.ts`)
-1. Dedupe insert (`processed_messages`, with `patient_wa`) and clinic load (cached 5 min) in parallel.
+1. Dedupe insert (`processed_messages`, with `patient_wa`) and clinic load (cached 60 s) in parallel.
 2. Rate-limit count and patient upsert run in parallel. More than 20 messages from one sender in 10 min gets one "slow down" reply, then silence (emergencies still get the fixed reply). Then `markRead` (blue ticks; UltraMsg has no typing indicator).
 3. Input caps: text cut to 1,500 chars; voice notes only from public https URLs and under 3 MB.
 4. Emergency (`safety.ts`, deterministic EN/AR regex): fixed 998 reply, appended to history, model does not run. Works even when the chat is paused.
@@ -94,7 +95,8 @@ npm run lint
 Booking limits: at most 3 upcoming visits per patient, and dates up to 60 days ahead. A stored patient name is never overwritten by a later booking.
 Errors: the SORRY reply promises a staff reply only when the clinic's `staff_whatsapp` is set; otherwise it gives the clinic phone.
 
-Handoff pauses a chat only when the clinic's `staff_whatsapp` is set; without it the bot keeps helping and gives the clinic phone.
+Handoff always pauses the chat, on both channels. The WhatsApp alert to staff goes out only when the clinic's `staff_whatsapp` is set.
+Booking is per dentist (`0007_dentists.sql`, applied 2026-11-01: `services`, `dentists`, `dentist_services`, `time_off`). The shared engine `src/lib/booking.ts` serves Sara, the dashboard and `jobs.ts`.
 
 ## Status
 - Phase 0: webhook + `parseWebhook` tests done.
@@ -107,6 +109,7 @@ Handoff pauses a chat only when the clinic's `staff_whatsapp` is set; without it
 - 2026-10-25: web chat first cut coded (`/chat/sample-smile`). 0004 now also adds `patients.web_visitor_id` and `phone`.
 - 2026-10-25: landing page and web chat redesigned ("Stone & Sage": Manrope + Readex Pro, stone background with sage/sand washes, full-screen chat with a clinic info sidebar). Tokens and rules in `.tastemaker/style-lock.md`. Deployed in 7d410b3.
 - 2026-10-25: Ledger design on the whole app; P2 dashboard coded (not committed or deployed yet).
+- 2026-11-01: front-desk CRM built on branch `dev` (spec `docs/superpowers/specs/2026-11-01-front-desk-crm-design.md`): per-dentist booking, desk booking/moving/cancelling, web-chat replies, Today/Inbox/Patients redesign, owner Settings. Test clinic Good Shine Dental: `scripts/seed-good-shine.ts`, see `docs/testing.md`; not run yet.
 - **Demo freeze (2026-10-22):** the owner judged the current bot enough to demo to leads and gather feedback. R4 onward is on hold until lead feedback comes in.
 - On hold:
   - R4 waitlist + recall (`0003` already has the recall columns and `appointments.source`).
@@ -118,4 +121,3 @@ Handoff pauses a chat only when the clinic's `staff_whatsapp` is set; without it
   - The number is UltraMsg on a test SIM, and `ALLOWED_SENDERS` limits who gets answers.
   - Staff and owner alerts go to the test number.
   - Images get a "can't view" reply.
-  - Only one chair per clinic is supported.
