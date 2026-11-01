@@ -4,7 +4,7 @@ import { createAiSdkUiMessageStreamResponse } from "@openai/agents-extensions/ai
 import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 import { after } from "next/server";
 import { z } from "zod";
-import { capText, RATE_MAX, RATE_WINDOW_MS, slowDown, sorry, trimHistory } from "@/lib/agent";
+import { capText, RATE_MAX, RATE_WINDOW_MS, slowDown, sorry, stillPaused, trimHistory } from "@/lib/agent";
 import { clinicBySlug } from "@/lib/clinics";
 import { db, logMessages, logUsage } from "@/lib/db";
 import { emergencyReply, isEmergency } from "@/lib/safety";
@@ -30,6 +30,8 @@ const fixed = (text: string) =>
       },
     }),
   });
+
+const HELD = "Our front desk has your chat and will reply here shortly.";
 
 export async function POST(req: Request) {
   // ponytail: same-origin only while the chat page is ours; the embeddable widget (P1) checks clinic.allowed_origins.
@@ -62,11 +64,13 @@ export async function POST(req: Request) {
     .gt("created_at", new Date(Date.now() - RATE_WINDOW_MS).toISOString());
   if ((count ?? 0) >= RATE_MAX) return fixed(slowDown(clinic.phone));
 
-  const { data: convo } = await sb.from("conversations").select("history").eq("patient_id", patient.id).maybeSingle();
+  const { data: convo } = await sb.from("conversations").select("history, bot_paused, updated_at").eq("patient_id", patient.id).maybeSingle();
   const saved = (convo?.history ?? []) as AgentInputItem[];
+  const paused = stillPaused(convo);
+  // While staff own the chat, updated_at stays put so the 30-min pause can lapse (same as agent.ts).
   const save = async (history: AgentInputItem[], reply: string | undefined) => {
     await logMessages(clinic.id, patient.id, "web", [{ role: "patient", body: text }, ...(reply ? [{ role: "assistant" as const, body: reply }] : [])]);
-    const { error } = await sb.from("conversations").upsert({ patient_id: patient.id, history: trimHistory(history), updated_at: new Date().toISOString() });
+    const { error } = await sb.from("conversations").upsert({ patient_id: patient.id, history: trimHistory(history), ...(paused ? {} : { updated_at: new Date().toISOString() }) });
     if (error) console.error("[history]", error.message);
   };
 
@@ -75,6 +79,12 @@ export async function POST(req: Request) {
     const reply = emergencyReply(text, clinic.phone);
     after(() => save([...saved, user(text), assistant(reply)], reply));
     return fixed(reply);
+  }
+
+  // Staff own the chat: keep the message for them, Sara stays quiet.
+  if (paused) {
+    after(() => save([...saved, user(text)], undefined));
+    return fixed(HELD);
   }
 
   try {
@@ -95,23 +105,29 @@ export async function POST(req: Request) {
   }
 }
 
-// Transcript after a reload: the visitor's last messages as plain text (tool cards are not replayed).
+// Transcript after a reload, and polling while staff own the chat: { paused, messages }, only rows newer than `after` if given.
 export async function GET(req: Request) {
   const q = new URL(req.url).searchParams;
   const visitorId = z.uuid().safeParse(q.get("visitorId"));
+  const after = Number(q.get("after")) || 0;
+  const empty = { paused: false, messages: [] };
   const clinic = await clinicBySlug(q.get("slug") ?? "");
-  if (!visitorId.success || !clinic?.active) return Response.json([]);
+  if (!visitorId.success || !clinic?.active) return Response.json(empty);
   const sb = db();
-  const { data: patient } = await sb.from("patients").select("id").eq("clinic_id", clinic.id).eq("web_visitor_id", visitorId.data).maybeSingle();
-  if (!patient) return Response.json([]);
-  const { data } = await sb
+  const { data: patient } = await sb.from("patients").select("id, conversations(bot_paused, updated_at)").eq("clinic_id", clinic.id).eq("web_visitor_id", visitorId.data).maybeSingle();
+  if (!patient) return Response.json(empty);
+  const convo = patient.conversations as unknown as { bot_paused: boolean; updated_at: string } | null;
+  let query = sb
     .from("messages")
-    .select("id, role, body")
+    .select("id, role, body, created_at")
     .eq("patient_id", patient.id)
     .in("role", ["patient", "assistant", "staff"])
     .order("id", { ascending: false }) // one save writes patient + reply in the same instant, so order by id
     .limit(30);
-  return Response.json(
-    (data ?? []).reverse().map((m) => ({ id: `h${m.id}`, role: m.role === "patient" ? "user" : "assistant", parts: [{ type: "text", text: m.body }] })),
-  );
+  if (after) query = query.gt("id", after);
+  const { data } = await query;
+  return Response.json({
+    paused: stillPaused(convo),
+    messages: (data ?? []).reverse().map((m) => ({ id: String(m.id), role: m.role, text: m.body, at: m.created_at })),
+  });
 }

@@ -247,9 +247,10 @@ export function Chat(props: ChatProps) {
   const [history, setHistory] = useState<UIMessage[]>([]);
   useEffect(() => {
     fetch(`/api/chat?slug=${encodeURIComponent(props.slug)}&visitorId=${id}`)
-      .then((r) => (r.ok ? r.json() : []))
-      .catch(() => [])
-      .then(setHistory);
+      .then((r) => (r.ok ? r.json() : { messages: [] }))
+      .catch(() => ({ messages: [] }))
+      .then((d: { messages: { id: string; role: string; text: string }[] }) =>
+        setHistory(d.messages.map((m) => ({ id: `h${m.id}`, role: m.role === "patient" ? "user" : "assistant", parts: [{ type: "text", text: m.text }] }))));
   }, [props.slug, id]);
   return <ChatView {...props} id={id} history={history} />;
 }
