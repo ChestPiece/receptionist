@@ -6,7 +6,7 @@ import { DefaultChatTransport, type DynamicToolUIPart, type UIMessage } from "ai
 import { ArrowLeftIcon, ArrowUpIcon, ChevronDownIcon, MapPinIcon, PanelLeftIcon, PhoneIcon, PlusIcon, RotateCcwIcon } from "lucide-react";
 import Link from "next/link";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { AppointmentList, BookedCard, Bubble, EASE_OUT, SlotPicker, TypingDots, type Appt, type Booked, type Slots } from "@/components/chat-cards";
 import { Conversation, ConversationContent, ConversationScrollButton } from "@/components/ai-elements/conversation";
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
@@ -241,21 +241,27 @@ type ChatProps = {
   info: Info;
 };
 
+type Line = { id: string; role: string; text: string };
+type Feed = { paused: boolean; messages: Line[] };
+const feed = (slug: string, id: string, after = 0): Promise<Feed | null> =>
+  fetch(`/api/chat?slug=${encodeURIComponent(slug)}&visitorId=${id}${after ? `&after=${after}` : ""}`)
+    .then((r) => (r.ok ? r.json() : null))
+    .catch(() => null);
+// Staff replies show as assistant turns; the "s" id prefix labels them as the front desk.
+const toUi = (m: Line): UIMessage => ({ id: `${m.role === "staff" ? "s" : "h"}${m.id}`, role: m.role === "patient" ? "user" : "assistant", parts: [{ type: "text", text: m.text }] });
+const newest = (ms: Line[], floor: number) => Math.max(floor, ...ms.map((m) => Number(m.id)));
+
 // Render at once; the visitor's earlier messages (text only) are fetched in the background and slotted in when they land.
 export function Chat(props: ChatProps) {
   const [id] = useState(visitorId);
-  const [history, setHistory] = useState<UIMessage[]>([]);
+  const [start, setStart] = useState<{ history: UIMessage[]; paused: boolean; lastId: number } | null>(null);
   useEffect(() => {
-    fetch(`/api/chat?slug=${encodeURIComponent(props.slug)}&visitorId=${id}`)
-      .then((r) => (r.ok ? r.json() : { messages: [] }))
-      .catch(() => ({ messages: [] }))
-      .then((d: { messages: { id: string; role: string; text: string }[] }) =>
-        setHistory(d.messages.map((m) => ({ id: `h${m.id}`, role: m.role === "patient" ? "user" : "assistant", parts: [{ type: "text", text: m.text }] }))));
+    feed(props.slug, id).then((d) => setStart({ history: (d?.messages ?? []).map(toUi), paused: !!d?.paused, lastId: newest(d?.messages ?? [], 0) }));
   }, [props.slug, id]);
-  return <ChatView {...props} id={id} history={history} />;
+  return <ChatView {...props} id={id} start={start} />;
 }
 
-function ChatView({ slug, clinicName, persona, phone, logo, info, id, history }: ChatProps & { id: string; history: UIMessage[] }) {
+function ChatView({ slug, clinicName, persona, phone, logo, info, id, start }: ChatProps & { id: string; start: { history: UIMessage[]; paused: boolean; lastId: number } | null }) {
   const sample = /\(sample data\)/i.test(clinicName);
   const name = clinicName.replace(/\s*\(sample data\)/i, "");
   const [greeted, setGreeted] = useState(false);
@@ -269,12 +275,40 @@ function ChatView({ slug, clinicName, persona, phone, logo, info, id, history }:
     }),
   });
   // History lands late: apply it only if the visitor has not typed yet.
+  const history = start?.history;
   useEffect(() => {
-    if (history.length && messages.length === 0 && status === "ready") {
+    if (history?.length && messages.length === 0 && status === "ready") {
       setMessages(history);
     }
   }, [history, messages.length, status, setMessages]);
   const busy = status === "submitted" || status === "streaming";
+
+  // Staff take-over: while paused, poll for new rows and append only staff replies (streamed turns already show).
+  // ponytail: polling, because anonymous visitors cannot pass RLS for realtime; upgrade path is a signed per-visitor channel.
+  const [pausedState, setPaused] = useState<boolean | null>(null);
+  const paused = pausedState ?? start?.paused ?? false;
+  const [back, setBack] = useState(false);
+  const last = useRef<number | null>(null);
+  const check = useCallback(async () => {
+    if (!start) return;
+    const after = last.current ?? start.lastId;
+    const d = await feed(slug, id, after);
+    if (!d) return;
+    last.current = newest(d.messages, after);
+    const staff = d.messages.filter((m) => m.role === "staff");
+    if (staff.length) setMessages((ms) => [...ms, ...staff.map(toUi)]);
+    setBack(paused && !d.paused);
+    setPaused(d.paused);
+  }, [start, slug, id, paused, setMessages]);
+  // After each finished reply (a handoff pauses the chat), and every 4 s while paused and the tab is visible.
+  useEffect(() => {
+    if (status === "ready" && messages.length) void check();
+  }, [status]); // eslint-disable-line react-hooks/exhaustive-deps -- run once per finished turn, not on every poll update
+  useEffect(() => {
+    if (!paused) return;
+    const t = setInterval(() => document.visibilityState === "visible" && void check(), 4000);
+    return () => clearInterval(t);
+  }, [paused, check]);
   const send = (text: string) => !busy && text.trim() && sendMessage({ text });
 
   // Sara "types" her greeting for a beat so the chat opens like a person picked up.
@@ -376,6 +410,7 @@ function ChatView({ slug, clinicName, persona, phone, logo, info, id, history }:
                     dir="auto"
                     className="group-[.is-user]:rounded-2xl group-[.is-user]:rounded-ee-sm group-[.is-user]:bg-primary group-[.is-user]:py-2.5 group-[.is-user]:text-primary-foreground"
                   >
+                    {m.id.startsWith("s") && <span className="text-xs font-medium text-muted-foreground">Front desk</span>}
                     {m.parts.map((p, i) =>
                       p.type === "text" ? (
                         m.role === "user" ? (
@@ -409,6 +444,11 @@ function ChatView({ slug, clinicName, persona, phone, logo, info, id, history }:
                   </div>
                 </div>
               </Enter>
+            )}
+            {(paused || back) && (
+              <p role="status" className="text-center text-xs text-muted-foreground">
+                {paused ? "You're chatting with the front desk. They reply here." : `${persona} is back. Ask her anything.`}
+              </p>
             )}
             {status === "submitted" && (
               <Enter>

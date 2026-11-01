@@ -19,9 +19,9 @@ export const timeLabel = (time: string) => {
   return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h < 12 ? "am" : "pm"}`;
 };
 
-export type Slots = { service: string; days: { date: string; times: string[]; note?: string }[] };
-export type Booked = { service: string; date: string; time: string; address: string | null; maps_url: string | null };
-export type Appt = { id: string; service: string; date: string; time: string };
+export type Slots = { service: string; dentist?: string; days: { date: string; times: string[]; note?: string }[] };
+export type Booked = { service: string; dentist?: string; date: string; time: string; address: string | null; maps_url: string | null };
+export type Appt = { id: string; service: string; dentist?: string; date: string; time: string };
 
 // Sara's line: plain text, no box, like a modern assistant reply. The patient's bubble is the sage one.
 export const Bubble = ({ children, className }: { children: ReactNode; className?: string }) => (
@@ -53,7 +53,7 @@ export function SlotPicker({ slots, onPick, busy, picked: pickedProp }: { slots:
     <Card className="w-full max-w-sm gap-3 rounded-xl py-4 shadow-none">
       <CardHeader className="border-b px-4 !pb-3">
         <CardTitle className="flex items-center gap-2 text-sm font-medium">
-          <ClockIcon className="size-3.5" /> Free times · {slots.service}
+          <ClockIcon className="size-3.5" /> Free times · {slots.service}{slots.dentist && ` with ${slots.dentist}`}
         </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3 px-4">
@@ -129,7 +129,7 @@ export function BookedCard({ booked: b }: { booked: Booked }) {
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-2 px-4 text-sm">
-          <div className="font-medium">{b.service}</div>
+          <div className="font-medium">{b.service}{b.dentist && <span className="font-normal text-muted-foreground"> with {b.dentist}</span>}</div>
           <div className="flex items-center gap-1.5 tabular-nums">
             <CalendarCheckIcon className="size-3.5 text-muted-foreground" />
             {dayLabel(b.date)} at {timeLabel(b.time)}
@@ -151,7 +151,7 @@ export function AppointmentList({ appts }: { appts: Appt[] }) {
       <CardContent className="flex flex-col divide-y px-4 text-sm">
         {appts.map((a) => (
           <div key={a.id} className="flex items-center justify-between gap-2 py-2">
-            <span>{a.service}</span>
+            <span>{a.service}{a.dentist && <span className="text-muted-foreground"> · {a.dentist}</span>}</span>
             <Badge variant="secondary" className="font-normal tabular-nums">
               {dayLabel(a.date)}, {timeLabel(a.time)}
             </Badge>
