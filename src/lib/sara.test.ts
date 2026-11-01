@@ -32,3 +32,12 @@ test("the prompt prefix is the same at any time of day and for any patient", () 
   expect(b.slice(0, cut)).toBe(a.slice(0, cut));
   expect(b).toContain("Anas Altaf (name on file, do not ask again)");
 });
+
+test("dentists show in the prompt only when the clinic has more than one", () => {
+  const d = (id: string, name: string) => ({ id, name, name_ar: name, title: "General", color: "#000", hours: {}, active: true, sort: 0, service_ids: ["s1"] });
+  const now = new Date("2026-10-30T05:00:00Z");
+  expect(buildInstructions({ ...clinic, dentists: [d("d1", "Dr. Amal Haddad")] }, null, null, now)).not.toContain('"dentists"');
+  const two = buildInstructions({ ...clinic, dentists: [d("d1", "Dr. Amal Haddad"), d("d2", "Dr. Omar Siddiqui")] }, null, null, now);
+  expect(two).toContain('"dentists":[{"name":"Dr. Amal Haddad"');
+  expect(two).toContain("Ask which dentist only if");
+});

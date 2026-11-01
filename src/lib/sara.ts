@@ -1,10 +1,10 @@
 // The agent brain, shared by every channel: one receptionist agent with booking tools backed by Supabase.
 import { Agent, run, tool, type AgentInputItem, type RunContext, type RunItem } from "@openai/agents";
 import { z } from "zod";
-import { personaName, type Clinic, type Service } from "./clinics";
+import { personaName, type Clinic } from "./clinics";
 import { db } from "./db";
-import { bookingSource, HORIZON_DAYS, tooFar } from "./booking";
-import { DAYS, freeSlots, localDate, localTime, toUtc, spreadSlots } from "./slots";
+import { availability, bookingSource, bookVisit, moveVisit, HORIZON_DAYS, tooFar, type BookResult } from "./booking";
+import { DAYS, localDate, localTime, toUtc, spreadSlots } from "./slots";
 import { sendText } from "./whatsapp";
 
 const MAX_UPCOMING = 3; // upcoming visits per patient
@@ -17,43 +17,24 @@ type Rc = RunContext<Ctx> | undefined;
 const DATE = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe("Clinic local date, YYYY-MM-DD");
 const TIME = z.string().regex(/^\d{2}:\d{2}$/).describe("HH:MM (24h), exactly as returned by find_slots");
 
-const findService = (c: Clinic, name: string) =>
-  c.services.find((s) => s.name.toLowerCase() === name.trim().toLowerCase());
+const active = (c: Clinic) => c.services.filter((s) => s.active);
+const findService = (c: Clinic, name: string) => {
+  const n = name.trim().toLowerCase();
+  return active(c).find((s) => s.name.toLowerCase() === n || s.name_ar === name.trim());
+};
+const UNKNOWN_SERVICE = (c: Clinic) => `Unknown service. Services: ${active(c).map((s) => s.name).join(", ")}`;
 
-// Bookings that overlap the given local day, optionally ignoring one appointment (the one being moved).
-async function bookedOn(c: Clinic, date: string, ignoreId?: string) {
-  const dayStart = toUtc(date, "00:00", c.utc_offset_minutes);
-  const dayEnd = new Date(dayStart.getTime() + 86_400_000);
-  const { data, error } = await db()
-    .from("appointments")
-    .select("id, starts_at, ends_at")
-    .eq("clinic_id", c.id)
-    .eq("status", "booked")
-    .lt("starts_at", dayEnd.toISOString())
-    .gt("ends_at", dayStart.toISOString());
-  if (error) throw error;
-  return data.filter((a) => a.id !== ignoreId).map((a) => ({ start: new Date(a.starts_at), end: new Date(a.ends_at) }));
-}
-
-export async function slotsOn(c: Clinic, service: Service, date: string, ignoreId?: string) {
-  return freeSlots(c.hours, await bookedOn(c, date, ignoreId), service.minutes, date, new Date(), c.utc_offset_minutes);
-}
-
-// Validates a requested slot; returns the times to write, or a message for the model.
-async function checkSlot(c: Clinic, serviceName: string, date: string, time: string, ignoreId?: string) {
-  const service = findService(c, serviceName);
-  if (!service) return `Unknown service. Services: ${c.services.map((s) => s.name).join(", ")}`;
-  if (tooFar(date, localDate(new Date(), c.utc_offset_minutes))) return `Too far ahead. Bookings open up to ${HORIZON_DAYS} days ahead.`;
-  const free = await slotsOn(c, service, date, ignoreId);
-  if (!free.includes(time)) return `Not available. Free times on ${date}: ${free.join(", ") || "none"}`;
-  const start = toUtc(date, time, c.utc_offset_minutes);
-  return { service, starts_at: start.toISOString(), ends_at: new Date(start.getTime() + service.minutes * 60_000).toISOString() };
-}
+// Dentist names show only when there is a choice to make.
+const multi = (c: Clinic) => c.dentists.filter((d) => d.active).length > 1;
+const strip = (s: string) => s.trim().toLowerCase().replace(/^dr\.?\s*/, "");
+const findDentist = (c: Clinic, name: string) => c.dentists.find((d) => d.active && strip(d.name) === strip(name));
+const dentistName = (c: Clinic, id: string | null) => (multi(c) && id ? { dentist: c.dentists.find((d) => d.id === id)?.name } : {});
+const UNKNOWN_DENTIST = (c: Clinic) => `Unknown dentist. Dentists: ${c.dentists.filter((d) => d.active).map((d) => d.name).join(", ")}`;
 
 async function upcoming({ clinic, patientId }: Ctx) {
   const { data, error } = await db()
     .from("appointments")
-    .select("id, service, starts_at")
+    .select("id, service, starts_at, dentist_id")
     .eq("patient_id", patientId)
     .eq("status", "booked")
     .gt("starts_at", new Date().toISOString())
@@ -61,11 +42,26 @@ async function upcoming({ clinic, patientId }: Ctx) {
   if (error) throw error;
   return data.map((a) => {
     const d = new Date(a.starts_at);
-    return { id: a.id as string, service: a.service as string, date: localDate(d, clinic.utc_offset_minutes), time: localTime(d, clinic.utc_offset_minutes) };
+    return { id: a.id as string, service: a.service as string, date: localDate(d, clinic.utc_offset_minutes), time: localTime(d, clinic.utc_offset_minutes), ...dentistName(clinic, a.dentist_id) };
   });
 }
 
 const TAKEN = "That slot was just taken. Call find_slots again and offer other times.";
+// A failed book/move as a message for the model.
+const why = (r: Exclude<BookResult, { ok: true }>, c: Clinic, date: string) =>
+  r.reason === "taken" ? TAKEN
+  : r.reason === "too_far" ? `Too far ahead. Bookings open up to ${HORIZON_DAYS} days ahead.`
+  : r.reason === "unknown_service" ? UNKNOWN_SERVICE(c)
+  : r.reason === "no_dentist" ? "No dentist does this service. Offer handoff_to_staff."
+  : `Not available. Free times on ${date}: ${r.free?.join(", ") || "none"}`;
+
+// Is this dentist on time off at any point that day?
+async function awayOn(c: Clinic, dentistId: string, date: string) {
+  const start = toUtc(date, "00:00", c.utc_offset_minutes);
+  const { count } = await db().from("time_off").select("id", { count: "exact", head: true })
+    .eq("dentist_id", dentistId).lt("starts_at", new Date(start.getTime() + 86_400_000).toISOString()).gt("ends_at", start.toISOString());
+  return !!count;
+}
 
 const findSlots = tool({
   name: "find_slots",
@@ -73,22 +69,26 @@ const findSlots = tool({
   parameters: z.object({
     service: z.string().describe("Exact service name from clinic info"),
     dates: z.array(DATE).min(1).max(3),
+    dentist: z.string().nullable().describe("Dentist name, only if the patient asked for one"),
   }),
-  async execute({ service: name, dates }, rc: Rc) {
+  async execute({ service: name, dates, dentist: dName }, rc: Rc) {
     const c = rc!.context.clinic;
     const service = findService(c, name);
-    if (!service) return `Unknown service. Services: ${c.services.map((s) => s.name).join(", ")}`;
+    if (!service) return UNKNOWN_SERVICE(c);
+    const dentist = dName ? findDentist(c, dName) : null;
+    if (dName && !dentist) return UNKNOWN_DENTIST(c);
     const lines = await Promise.all(
       dates.map(async (date) => {
         if (tooFar(date, localDate(new Date(), c.utc_offset_minutes))) return { date, times: [], note: `too far ahead, bookings open up to ${HORIZON_DAYS} days ahead` };
-        const free = await slotsOn(c, service, date);
+        const free = ((await availability(db(), c, { serviceId: service.id, from: date, days: 1, dentistId: dentist?.id }))[date] ?? []).map((f) => f.time);
+        if (!free.length && dentist && (await awayOn(c, dentist.id, date))) return { date, times: [], note: `${dentist.name} is away on this day` };
         const times = spreadSlots(free, dates.length > 1 ? 2 : 4);
         const more = free.length - times.length;
         return { date, times, ...(more ? { note: `${more} more free times; ask if none of these fit` } : {}) };
       }),
     );
     // Structured so the web chat can draw tappable time buttons. The model reads JSON fine.
-    return { service: service.name, days: lines };
+    return { service: service.name, ...(dentist && multi(c) ? { dentist: dentist.name } : {}), days: lines };
   },
 });
 
@@ -101,30 +101,28 @@ const book = tool({
     time: TIME,
     patient_name: z.string().nullable().describe("Patient full name, if given"),
     patient_phone: z.string().nullable().describe("Patient mobile number, if given (web chat asks for it)"),
+    dentist: z.string().nullable().describe("Dentist name, only if the patient asked for one"),
   }),
-  async execute({ service, date, time, patient_name, patient_phone }, rc: Rc) {
+  async execute({ service: name, date, time, patient_name, patient_phone, dentist: dName }, rc: Rc) {
     const { clinic, patientId, patientName, patientPhone, waId } = rc!.context;
     // A web visitor is anonymous: the clinic needs a number to reach them.
     if (!waId && !patientPhone && !patient_phone) return "Ask for the patient's mobile number first, then call book again with patient_phone.";
-    const [list, slot, { data: convo }] = await Promise.all([
+    const service = findService(clinic, name);
+    if (!service) return UNKNOWN_SERVICE(clinic);
+    const dentist = dName ? findDentist(clinic, dName) : null;
+    if (dName && !dentist) return UNKNOWN_DENTIST(clinic);
+    const [list, { data: convo }] = await Promise.all([
       upcoming(rc!.context),
-      checkSlot(clinic, service, date, time),
       db().from("conversations").select("followup_sent_at").eq("patient_id", patientId).maybeSingle(),
     ]);
     if (list.length >= MAX_UPCOMING)
       return `This patient already has ${MAX_UPCOMING} upcoming visits, the most allowed. Offer to move or cancel one, or call the clinic.`;
-    if (typeof slot === "string") return slot;
+    const r = await bookVisit(db(), clinic, { patientId, serviceId: service.id, date, time, dentistId: dentist?.id, source: bookingSource(convo?.followup_sent_at ?? null, new Date()) });
+    if (!r.ok) return why(r, clinic, date);
     // Keep the name on file: a later booking "for my son" must not rename the account holder.
     const fill = { ...(patient_name && !patientName ? { name: patient_name } : {}), ...(patient_phone && !patientPhone ? { phone: patient_phone } : {}) };
     if (Object.keys(fill).length) await db().from("patients").update(fill).eq("id", patientId);
-    const { data, error } = await db()
-      .from("appointments")
-      .insert({ clinic_id: clinic.id, patient_id: patientId, service: slot.service.name, starts_at: slot.starts_at, ends_at: slot.ends_at, source: bookingSource(convo?.followup_sent_at ?? null, new Date()) })
-      .select("id")
-      .single();
-    if (error?.code === "23P01") return TAKEN;
-    if (error) throw error;
-    return { booked: true, id: data.id, service: slot.service.name, date, time, address: clinic.address, maps_url: clinic.maps_url };
+    return { booked: true, id: r.id, service: service.name, date, time, ...dentistName(clinic, r.dentistId), address: clinic.address, maps_url: clinic.maps_url };
   },
 });
 
@@ -154,21 +152,19 @@ const cancel = tool({
 const reschedule = tool({
   name: "reschedule",
   description: "Move one of this patient's upcoming appointments to a new free time from find_slots.",
-  parameters: z.object({ appointment_id: z.string().describe("id from my_appointments"), date: DATE, time: TIME }),
-  async execute({ appointment_id, date, time }, rc: Rc) {
+  parameters: z.object({
+    appointment_id: z.string().describe("id from my_appointments"), date: DATE, time: TIME,
+    dentist: z.string().nullable().describe("Only if the patient asked for another dentist; null keeps the same one"),
+  }),
+  async execute({ appointment_id, date, time, dentist: dName }, rc: Rc) {
     const ctx = rc!.context;
-    const appt = (await upcoming(ctx)).find((a) => a.id === appointment_id);
-    if (!appt) return "No such upcoming appointment. Call my_appointments.";
-    const slot = await checkSlot(ctx.clinic, appt.service, date, time, appointment_id);
-    if (typeof slot === "string") return slot;
-    const { error } = await db()
-      .from("appointments")
-      .update({ starts_at: slot.starts_at, ends_at: slot.ends_at, reminded_24h_at: null, reminded_2h_at: null, confirmed_at: null })
-      .eq("id", appointment_id)
-      .eq("patient_id", ctx.patientId);
-    if (error?.code === "23P01") return TAKEN;
-    if (error) throw error;
-    return `Moved to ${date} at ${time}.`;
+    if (!(await upcoming(ctx)).some((a) => a.id === appointment_id)) return "No such upcoming appointment. Call my_appointments.";
+    const dentist = dName ? findDentist(ctx.clinic, dName) : null;
+    if (dName && !dentist) return UNKNOWN_DENTIST(ctx.clinic);
+    const r = await moveVisit(db(), ctx.clinic, { id: appointment_id, date, time, dentistId: dentist?.id });
+    if (!r.ok) return why(r, ctx.clinic, date);
+    const who = dentistName(ctx.clinic, r.dentistId).dentist;
+    return `Moved to ${date} at ${time}${who ? ` with ${who}` : ""}.`;
   },
 });
 
@@ -194,20 +190,16 @@ const handoff = tool({
   }),
   async execute({ reason, callback_phone }, rc: Rc) {
     const { patientId, patientName, patientPhone, waId, clinic } = rc!.context;
-    const staff = clinic.staff_whatsapp;
-    // Nobody would see the alert, so pausing would leave the patient talking to a dead chat.
-    if (!staff || !clinic.wa) return `No staff available on WhatsApp right now. Do not promise a reply here. Keep helping, and ${clinic.phone ? `give the clinic phone ${clinic.phone}` : "ask them to call the clinic"} for anything you cannot answer.`;
-    if (!waId) {
-      // Staff cannot reply inside the web chat yet, so collect a number and keep the bot talking.
-      // ponytail: live staff replies in the web chat come with the dashboard inbox (P2).
-      const phone = callback_phone || patientPhone;
-      if (!phone) return "Ask for the patient's mobile number so staff can call or WhatsApp them back, then call handoff_to_staff again.";
-      await sendText(clinic.wa, staff, `Web chat callback: ${patientName ?? "visitor"} ${phone}: ${reason}`);
-      return "Staff notified. Tell the patient a team member will call or WhatsApp them soon, and keep helping here meanwhile.";
-    }
+    // Staff reply from the dashboard inbox on both channels; the pause lapses after 30 min.
     const { error } = await db().from("conversations").upsert({ patient_id: patientId, bot_paused: true, updated_at: new Date().toISOString() });
     if (error) throw error;
-    await sendText(clinic.wa, staff, `Bot handoff: ${waId.replace("@c.us", "")}: ${reason}`);
+    const staff = clinic.staff_whatsapp;
+    if (staff && clinic.wa) {
+      const phone = callback_phone || patientPhone;
+      await sendText(clinic.wa, staff, waId
+        ? `Bot handoff: ${waId.replace("@c.us", "")}: ${reason}`
+        : `Web chat handoff: ${patientName ?? "visitor"}${phone ? ` ${phone}` : ""}: ${reason}`);
+    }
     return "Staff notified. Tell the patient a team member will reply in this chat soon.";
   },
 });
@@ -217,7 +209,11 @@ export function buildInstructions(c: Clinic, patientName: string | null, waId: s
   const web = !waId;
   const today = localDate(now, c.utc_offset_minutes);
   const weekday = DAYS[new Date(`${today}T00:00:00Z`).getUTCDay()];
-  const info = { name: c.name, address: c.address, maps_url: c.maps_url, phone: c.phone, hours: c.hours, services: c.services, insurers_accepted: c.insurers, faq: c.faq };
+  const services = active(c).map(({ name, name_ar, minutes, price_aed }) => ({ name, name_ar, minutes, price_aed }));
+  const dentists = multi(c)
+    ? c.dentists.filter((d) => d.active).map((d) => ({ name: d.name, title: d.title, services: active(c).filter((s) => d.service_ids.includes(s.id)).map((s) => s.name) }))
+    : undefined;
+  const info = { name: c.name, address: c.address, maps_url: c.maps_url, phone: c.phone, hours: c.hours, services, ...(dentists ? { dentists } : {}), insurers_accepted: c.insurers, faq: c.faq };
   return `You are ${personaName(c)}, the receptionist at ${c.name}, a dental clinic in the UAE, chatting with a patient ${web ? "in the chat on the clinic website" : "on WhatsApp"}.
 
 How you talk
@@ -238,7 +234,8 @@ Booking
 - If the name is not on file, ask for it before booking.${web ? " Also ask for their mobile number and pass it as patient_phone." : ""} Then confirm everything in one line, e.g. "Filling, *Thu 22 Oct at 4 pm*, under Anas Altaf. Shall I book it?" Call book only after a yes.
 - After booking: a short confirmation with the date, time and address, and that they can message here to change it.
 - Reschedule or cancel: call my_appointments first. Before cancelling, confirm and offer once to move it instead. After cancelling, keep it short and kind.
-- For pain or a broken tooth, be kind and offer the earliest "Toothache visit".
+- For pain or a broken tooth, be kind and offer the earliest "Toothache visit".${multi(c) ? `
+- Ask which dentist only if the patient names one or only one dentist does the service. Otherwise pass dentist null: the clinic assigns one. If a named dentist is away, say so and offer other days or another dentist.` : ""}
 - Reminders: the clinic sends "Reply 1 to confirm or 2 to change it". A reply of 1, yes, ok or تمام: call my_appointments, then confirm_visit, then thank them in one short line. A reply of 2: ask which day suits them and reschedule as usual. If they cannot come at all, offer to move it before cancelling.
 
 What you handle, like a real front desk

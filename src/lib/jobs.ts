@@ -4,7 +4,7 @@ import { stillPaused, trimHistory } from "./agent";
 import { bookingSource } from "./booking";
 import { activeClinics, personaName, type Clinic } from "./clinics";
 import { db, logMessages } from "./db";
-import { slotsOn } from "./sara";
+import { availability } from "./booking";
 import { localDate, toUtc } from "./slots";
 import { sendText } from "./whatsapp";
 
@@ -148,11 +148,9 @@ async function sendReminders(clinic: Clinic, now: Date, budget: number) {
 async function nextFree(clinic: Clinic, serviceName: string, now: Date) {
   const service = clinic.services.find((s) => s.name === serviceName);
   if (!service) return null;
-  for (let d = 0; d < 7; d++) {
-    const date = localDate(new Date(now.getTime() + d * 24 * HOUR), clinic.utc_offset_minutes);
-    const [time] = await slotsOn(clinic, service, date);
-    if (time) return when(toUtc(date, time, clinic.utc_offset_minutes), clinic.utc_offset_minutes, "en-US");
-  }
+  const free = await availability(db(), clinic, { serviceId: service.id, from: localDate(now, clinic.utc_offset_minutes), days: 7 });
+  for (const [date, times] of Object.entries(free))
+    if (times[0]) return when(toUtc(date, times[0].time, clinic.utc_offset_minutes), clinic.utc_offset_minutes, "en-US");
   return null;
 }
 
