@@ -22,10 +22,11 @@ export default async function Patient({ params }: PageProps<"/dashboard/patients
   const { sb, clinic: picked } = await desk();
   if (!picked) return null;
   const { id } = await params;
-  const [{ data: p }, { data: visits }, { data: msgs }, clinic] = await Promise.all([
+  const [{ data: p }, { data: visits }, { data: msgs }, { data: events }, clinic] = await Promise.all([
     sb.from("patients").select("id, clinic_id, name, phone, email, wa_id, notes, tags, opted_out").eq("id", id).maybeSingle(),
     sb.from("appointments").select("id, service, starts_at, status, dentist_id").eq("patient_id", id).order("starts_at", { ascending: false }).limit(50),
     sb.from("messages").select("id, role, body, created_at").eq("patient_id", id).order("id", { ascending: false }).limit(60),
+    sb.from("agent_events").select("id, actor, level, summary, created_at").eq("patient_id", id).order("created_at", { ascending: false }).limit(20),
     deskConfig(sb, picked.id),
   ]);
   if (!p || p.clinic_id !== clinic.id) notFound();
@@ -78,6 +79,23 @@ export default async function Patient({ params }: PageProps<"/dashboard/patients
               })}
             </ul>
           </section>
+
+          {(events ?? []).length > 0 && (
+            <section>
+              <h2 className="text-sm font-semibold">Activity</h2>
+              <ul className="mt-2 divide-y rounded-xl border text-sm">
+                {(events ?? []).map((e) => {
+                  const at = new Date(e.created_at);
+                  return (
+                    <li key={e.id} className="px-3 py-2">
+                      <span className={cn("block", e.level === "warn" && "font-medium text-alert")}>{e.summary}</span>
+                      <span className="block font-mono text-xs text-muted-foreground">{e.actor} · {DAY.format(new Date(`${localDate(at, off)}T00:00:00Z`))} · {localTime(at, off)}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          )}
         </div>
         <section className="flex min-h-0 flex-col max-lg:min-h-96">
           <h2 className="flex h-11 shrink-0 items-center border-b px-4 text-sm font-semibold">Conversation</h2>

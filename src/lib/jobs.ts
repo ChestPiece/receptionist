@@ -4,8 +4,9 @@ import { stillPaused, trimHistory } from "./agent";
 import { bookingSource } from "./booking";
 import { activeClinics, personaName, type Clinic } from "./clinics";
 import { db, logMessages } from "./db";
+import { logEvent, visitSummary } from "./events";
 import { availability } from "./booking";
-import { localDate, toUtc } from "./slots";
+import { localDate, localTime, toUtc } from "./slots";
 import { sendText } from "./whatsapp";
 
 const HOUR = 3_600_000;
@@ -97,7 +98,7 @@ export async function appendToChat(patientId: string, text: string) {
   if (error) console.error("[outbound history]", error.message);
 }
 
-async function send(clinic: Clinic, to: string, text: string, patientId: string, kind: string) {
+async function send(clinic: Clinic, to: string, text: string, patientId: string, kind: "reminder" | "followup", summary: string, appointmentId?: string) {
   try {
     await sendText(clinic.wa!, to, text);
   } catch (e) {
@@ -106,6 +107,7 @@ async function send(clinic: Clinic, to: string, text: string, patientId: string,
   }
   await appendToChat(patientId, text);
   await logMessages(clinic.id, patientId, "whatsapp", [{ role: "system", body: text }]);
+  await logEvent(db(), { clinicId: clinic.id, patientId, appointmentId, actor: "system", kind, summary });
   return true;
 }
 
@@ -139,7 +141,9 @@ async function sendReminders(clinic: Clinic, now: Date, budget: number) {
     const patient = v.patients as unknown as { wa_id: string | null; name: string | null };
     if (!patient.wa_id) continue; // web chat patient: no WhatsApp to remind on. ponytail: email/SMS reminders later
     const text = reminderText({ name: patient.name, service: v.service, startsAt: new Date(v.starts_at), clinic: clinic.name, offsetMin: clinic.utc_offset_minutes });
-    if (await send(clinic, patient.wa_id, text, v.patient_id, "reminder")) sent++;
+    const at = new Date(v.starts_at);
+    const summary = visitSummary(`Sent ${kind} reminder to`, { patient: patient.name, service: v.service, date: localDate(at, clinic.utc_offset_minutes), time: localTime(at, clinic.utc_offset_minutes) });
+    if (await send(clinic, patient.wa_id, text, v.patient_id, "reminder", summary, v.id)) sent++;
   }
   return sent;
 }
@@ -193,7 +197,7 @@ async function sendFollowups(clinic: Clinic, now: Date, budget: number) {
     const service = guessService(JSON.stringify(convo.history), clinic.services.map((s) => s.name));
     const slot = await nextFree(clinic, service ?? clinic.services[0]?.name, now);
     const text = followupText({ name: patient.name, service, slot, clinic: clinic.name, persona: personaName(clinic) });
-    if (await send(clinic, wa, text, patient.id, "followup")) sent++;
+    if (await send(clinic, wa, text, patient.id, "followup", `Sent a follow-up to ${patient.name ?? "a patient"}${service ? ` · ${service}` : ""}`)) sent++;
   }
   return sent;
 }

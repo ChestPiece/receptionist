@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDaysIcon, ChevronsUpDownIcon, InboxIcon, LayoutListIcon, SettingsIcon, UsersIcon } from "lucide-react";
+import { ActivityIcon, CalendarDaysIcon, ChevronsUpDownIcon, InboxIcon, LayoutListIcon, SettingsIcon, UsersIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
@@ -14,6 +14,7 @@ const NAV = [
   { href: "/dashboard/inbox", label: "Inbox", icon: InboxIcon },
   { href: "/dashboard/calendar", label: "Calendar", icon: CalendarDaysIcon },
   { href: "/dashboard/patients", label: "Patients", icon: UsersIcon },
+  { href: "/dashboard/activity", label: "Activity", icon: ActivityIcon },
 ];
 
 function NavLink({ href, label, icon: Icon, children }: { href: string; label: string; icon: typeof InboxIcon; children?: ReactNode }) {
@@ -33,12 +34,12 @@ function NavLink({ href, label, icon: Icon, children }: { href: string; label: s
   );
 }
 
-// `inboxBadge` and `settings` stream in behind Suspense (they need the signed-in user); the links themselves render at once.
-export function Nav({ inboxBadge, settings }: { inboxBadge?: ReactNode; settings?: ReactNode }) {
+// The badges (by href) and `settings` stream in behind Suspense (they need the signed-in user); the links themselves render at once.
+export function Nav({ badges, settings }: { badges?: Record<string, ReactNode>; settings?: ReactNode }) {
   return (
     <SidebarMenu>
       {NAV.map((n) => (
-        <NavLink key={n.href} {...n}>{n.href === "/dashboard/inbox" && inboxBadge}</NavLink>
+        <NavLink key={n.href} {...n}>{badges?.[n.href]}</NavLink>
       ))}
       {settings}
     </SidebarMenu>
@@ -47,7 +48,7 @@ export function Nav({ inboxBadge, settings }: { inboxBadge?: ReactNode; settings
 
 export const SettingsLink = () => <NavLink href="/dashboard/settings" label="Settings" icon={SettingsIcon} />;
 
-export const InboxBadge = ({ count }: { count: number }) =>
+export const CountBadge = ({ count }: { count: number }) =>
   count > 0 ? <SidebarMenuBadge className="rounded-full bg-alert px-1.5 text-white peer-data-[active=true]/menu-button:text-white">{count}</SidebarMenuBadge> : null;
 
 // With several clinics the header is a dropdown; with one it is a plain label.
@@ -85,7 +86,7 @@ export function ClinicSwitcher({ clinics, current }: { clinics: { id: string; na
   );
 }
 
-// Re-renders the page when this clinic's chats or visits change (staff pauses refresh on their own; a bot handoff always logs a message). RLS limits what Realtime sends.
+// Re-renders the page when this clinic's chats, visits or activity change (staff pauses refresh on their own; a bot handoff always logs a message). RLS limits what Realtime sends.
 export function Live({ clinicId }: { clinicId: string }) {
   const router = useRouter();
   useEffect(() => {
@@ -99,6 +100,7 @@ export function Live({ clinicId }: { clinicId: string }) {
       .channel(`desk-${clinicId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "messages", filter: `clinic_id=eq.${clinicId}` }, soon)
       .on("postgres_changes", { event: "*", schema: "public", table: "appointments", filter: `clinic_id=eq.${clinicId}` }, soon)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "agent_events", filter: `clinic_id=eq.${clinicId}` }, soon)
       .subscribe();
     return () => {
       clearTimeout(t);

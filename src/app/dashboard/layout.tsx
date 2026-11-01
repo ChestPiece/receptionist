@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { stillPaused } from "@/lib/agent";
 import { desk } from "@/lib/dashboard";
 import { signOut } from "./actions";
-import { ClinicSwitcher, InboxBadge, Live, Nav, SettingsLink } from "./shell";
+import { ClinicSwitcher, CountBadge, Live, Nav, SettingsLink } from "./shell";
 
 // Dashboard is per-user (auth cookies), so it renders on request instead of prerendering.
 export const instant = false;
@@ -28,7 +28,7 @@ export default function DashboardLayout({ children }: LayoutProps<"/dashboard">)
         </SidebarHeader>
         <SidebarContent>
           <SidebarGroup>
-            <Nav inboxBadge={<Suspense fallback={null}><NeedsStaff /></Suspense>} settings={<Suspense fallback={null}><Settings /></Suspense>} />
+            <Nav badges={{ "/dashboard/inbox": <Suspense fallback={null}><NeedsStaff /></Suspense>, "/dashboard/activity": <Suspense fallback={null}><Warnings /></Suspense> }} settings={<Suspense fallback={null}><Settings /></Suspense>} />
           </SidebarGroup>
         </SidebarContent>
         <SidebarFooter>
@@ -65,7 +65,15 @@ async function NeedsStaff() {
   const { sb, clinic } = await desk();
   if (!clinic) return null;
   const { data: convos } = await sb.from("conversations").select("bot_paused, updated_at, patients!inner(clinic_id)").eq("patients.clinic_id", clinic.id).eq("bot_paused", true);
-  return <InboxBadge count={(convos ?? []).filter((c) => stillPaused(c)).length} />;
+  return <CountBadge count={(convos ?? []).filter((c) => stillPaused(c)).length} />;
+}
+
+// Warnings in the last 24 h. Shows nothing if the activity table is not set up yet.
+async function Warnings() {
+  const { sb, clinic } = await desk();
+  if (!clinic) return null;
+  const { count } = await sb.from("agent_events").select("id", { count: "exact", head: true }).eq("clinic_id", clinic.id).eq("level", "warn").gte("created_at", new Date(new Date().getTime() - 86_400_000).toISOString());
+  return <CountBadge count={count ?? 0} />;
 }
 
 async function User() {

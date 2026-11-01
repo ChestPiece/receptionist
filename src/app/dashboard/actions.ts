@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { availability, bookVisit, cancelVisit, moveVisit, type BookResult, type Free } from "@/lib/booking";
 import { deskConfig, loadClinic } from "@/lib/clinics";
 import { CLINIC_COOKIE, desk } from "@/lib/dashboard";
+import { logEvent } from "@/lib/events";
 import { appendToChat } from "@/lib/jobs";
 import { normUaePhone, waIdOf } from "@/lib/phone";
 import { supabaseServer } from "@/lib/supabase/server";
@@ -28,6 +29,8 @@ export async function setPaused(patientId: string, paused: boolean) {
   const sb = await supabaseServer();
   const { error } = await sb.from("conversations").update({ bot_paused: paused, updated_at: new Date().toISOString() }).eq("patient_id", patientId);
   if (error) throw new Error("Could not update the chat.");
+  const { data: p } = await sb.from("patients").select("clinic_id, name").eq("id", patientId).maybeSingle();
+  if (p) await logEvent(sb, { clinicId: p.clinic_id, patientId, actor: "staff", kind: paused ? "takeover" : "handback", summary: `${paused ? "Took over" : "Handed back"} the chat with ${p.name ?? "a patient"}` });
   refresh();
 }
 
@@ -35,7 +38,7 @@ export async function staffReply(patientId: string, form: FormData): Promise<str
   const text = String(form.get("text") ?? "").trim().slice(0, 1500);
   if (!text) return null;
   const sb = await supabaseServer();
-  const { data: patient } = await sb.from("patients").select("id, clinic_id, wa_id").eq("id", patientId).maybeSingle();
+  const { data: patient } = await sb.from("patients").select("id, clinic_id, name, wa_id").eq("id", patientId).maybeSingle();
   if (!patient) return "Patient not found.";
   // Web chat: the visitor's page polls for staff messages, nothing to send.
   if (patient.wa_id) {
@@ -53,6 +56,7 @@ export async function staffReply(patientId: string, form: FormData): Promise<str
     // A staff reply keeps the chat paused and tells Sara what was said, for when she takes it back.
     sb.from("conversations").update({ bot_paused: true, updated_at: new Date().toISOString() }).eq("patient_id", patient.id),
     appendToChat(patient.id, text),
+    logEvent(sb, { clinicId: patient.clinic_id, patientId: patient.id, actor: "staff", kind: "staff_reply", summary: `Replied to ${patient.name ?? "a patient"}` }),
   ]);
   refresh();
   return null;
@@ -65,9 +69,13 @@ export async function setVisitStatus(id: string, status: string) {
   // A cancelled visit is never revived here: its dentist may be off or inactive now, so rebooking goes through the booking dialog.
   let q = sb.from("appointments").update({ status }).eq("id", id);
   if (status === "booked") q = q.neq("status", "cancelled");
-  const { data, error } = await q.select("id");
+  const { data, error } = await q.select("id, clinic_id, patient_id, service, patients(name)");
   if (error) throw new Error(error.code === "23P01" ? "That time is taken now." : "Could not update the visit.");
   if (!data.length) throw new Error("Cancelled visits can't be restored. Book a new visit instead.");
+  const [a] = data;
+  if (status === "completed" || status === "no_show")
+    await logEvent(sb, { clinicId: a.clinic_id, patientId: a.patient_id, appointmentId: a.id, actor: "staff", kind: status === "completed" ? "arrived" : "no_show",
+      summary: `Marked ${(a.patients as unknown as { name: string | null } | null)?.name ?? "a patient"} as ${status === "completed" ? "arrived" : "a no-show"} · ${a.service}` });
   refresh();
 }
 
@@ -108,20 +116,21 @@ export async function freeTimes(q: { serviceId: string; date: string; dentistId?
 
 export async function bookForPatient(v: { patientId: string; serviceId: string; date: string; time: string; dentistId?: string | null }): Promise<DeskResult> {
   const { sb, clinic } = await current();
-  const r = withCopy(await bookVisit(sb, clinic, { ...v, source: "staff" }));
+  const r = withCopy(await bookVisit(sb, clinic, { ...v, source: "staff", actor: "staff" }));
   if (r.ok) refresh();
   return r;
 }
 
 export async function moveForPatient(v: { id: string; date: string; time: string; dentistId?: string | null }): Promise<DeskResult> {
   const { sb, clinic } = await current();
-  const r = withCopy(await moveVisit(sb, clinic, v));
+  const r = withCopy(await moveVisit(sb, clinic, { ...v, actor: "staff" }));
   if (r.ok) refresh();
   return r;
 }
 
 export async function cancelForPatient(id: string) {
-  await cancelVisit(await supabaseServer(), id);
+  const { sb, clinic } = await current();
+  await cancelVisit(sb, clinic, id, "staff");
   refresh();
 }
 

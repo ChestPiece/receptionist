@@ -3,7 +3,8 @@ import { Agent, run, tool, type AgentInputItem, type RunContext, type RunItem } 
 import { z } from "zod";
 import { personaName, type Clinic } from "./clinics";
 import { db } from "./db";
-import { availability, bookingSource, bookVisit, moveVisit, HORIZON_DAYS, tooFar, type BookResult } from "./booking";
+import { availability, bookingSource, bookVisit, cancelVisit, moveVisit, record, HORIZON_DAYS, tooFar, type BookResult } from "./booking";
+import { logEvent, visitSummary } from "./events";
 import { DAYS, localDate, localTime, toUtc, spreadSlots } from "./slots";
 import { sendText } from "./whatsapp";
 
@@ -115,9 +116,11 @@ const book = tool({
       upcoming(rc!.context),
       db().from("conversations").select("followup_sent_at").eq("patient_id", patientId).maybeSingle(),
     ]);
-    if (list.length >= MAX_UPCOMING)
+    if (list.length >= MAX_UPCOMING) {
+      await record(db(), clinic, { actor: "sara", kind: "book_failed", verb: "Could not book", patientId, service: service.name, date, time, dentistId: dentist?.id, why: `already has ${MAX_UPCOMING} upcoming visits` });
       return `This patient already has ${MAX_UPCOMING} upcoming visits, the most allowed. Offer to move or cancel one, or call the clinic.`;
-    const r = await bookVisit(db(), clinic, { patientId, serviceId: service.id, date, time, dentistId: dentist?.id, source: bookingSource(convo?.followup_sent_at ?? null, new Date()) });
+    }
+    const r = await bookVisit(db(), clinic, { patientId, serviceId: service.id, date, time, dentistId: dentist?.id, source: bookingSource(convo?.followup_sent_at ?? null, new Date()), actor: "sara" });
     if (!r.ok) return why(r, clinic, date);
     // Keep the name on file: a later booking "for my son" must not rename the account holder.
     const fill = { ...(patient_name && !patientName ? { name: patient_name } : {}), ...(patient_phone && !patientPhone ? { phone: patient_phone } : {}) };
@@ -143,8 +146,7 @@ const cancel = tool({
   async execute({ appointment_id }, rc: Rc) {
     const ctx = rc!.context;
     if (!(await upcoming(ctx)).some((a) => a.id === appointment_id)) return "No such upcoming appointment. Call my_appointments.";
-    const { error } = await db().from("appointments").update({ status: "cancelled" }).eq("id", appointment_id).eq("patient_id", ctx.patientId);
-    if (error) throw error;
+    await cancelVisit(db(), ctx.clinic, appointment_id, "sara");
     return "Cancelled.";
   },
 });
@@ -161,7 +163,7 @@ const reschedule = tool({
     if (!(await upcoming(ctx)).some((a) => a.id === appointment_id)) return "No such upcoming appointment. Call my_appointments.";
     const dentist = dName ? findDentist(ctx.clinic, dName) : null;
     if (dName && !dentist) return UNKNOWN_DENTIST(ctx.clinic);
-    const r = await moveVisit(db(), ctx.clinic, { id: appointment_id, date, time, dentistId: dentist?.id });
+    const r = await moveVisit(db(), ctx.clinic, { id: appointment_id, date, time, dentistId: dentist?.id, actor: "sara" });
     if (!r.ok) return why(r, ctx.clinic, date);
     const who = dentistName(ctx.clinic, r.dentistId).dentist;
     return `Moved to ${date} at ${time}${who ? ` with ${who}` : ""}.`;
@@ -174,9 +176,11 @@ const confirmVisit = tool({
   parameters: z.object({ appointment_id: z.string().describe("id from my_appointments") }),
   async execute({ appointment_id }, rc: Rc) {
     const ctx = rc!.context;
-    if (!(await upcoming(ctx)).some((a) => a.id === appointment_id)) return "No such upcoming appointment. Call my_appointments.";
+    const visit = (await upcoming(ctx)).find((a) => a.id === appointment_id);
+    if (!visit) return "No such upcoming appointment. Call my_appointments.";
     const { error } = await db().from("appointments").update({ confirmed_at: new Date().toISOString() }).eq("id", appointment_id).eq("patient_id", ctx.patientId);
     if (error) throw error;
+    await logEvent(db(), { clinicId: ctx.clinic.id, patientId: ctx.patientId, appointmentId: appointment_id, actor: "sara", kind: "confirmed", summary: visitSummary("Confirmed", { patient: ctx.patientName, service: visit.service, date: visit.date, time: visit.time, dentist: visit.dentist }) });
     return "Confirmed.";
   },
 });
@@ -193,6 +197,7 @@ const handoff = tool({
     // Staff reply from the dashboard inbox on both channels; the pause lapses after 30 min.
     const { error } = await db().from("conversations").upsert({ patient_id: patientId, bot_paused: true, updated_at: new Date().toISOString() });
     if (error) throw error;
+    await logEvent(db(), { clinicId: clinic.id, patientId, actor: "sara", kind: "handoff", level: "warn", summary: `Handed ${patientName ?? "a chat"} to staff: ${reason}` });
     const staff = clinic.staff_whatsapp;
     if (staff && clinic.wa) {
       const phone = callback_phone || patientPhone;

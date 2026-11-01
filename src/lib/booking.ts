@@ -1,7 +1,8 @@
 // Booking engine: a pure core (who can take a service, when they are free) and a thin DB layer over it. No imports from sara/jobs.
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Clinic, Dentist } from "./clinics";
-import { DAYS, freeSlots, localDate, toUtc, type Hours } from "./slots";
+import { logEvent, visitSummary, type Actor } from "./events";
+import { DAYS, freeSlots, localDate, localTime, toUtc, type Hours } from "./slots";
 
 export const HORIZON_DAYS = 60;
 export type Busy = { dentistId: string; start: Date; end: Date };
@@ -83,6 +84,26 @@ export type BookResult =
   | { ok: true; id: string; dentistId: string; date: string; time: string }
   | { ok: false; reason: "taken" | "unavailable" | "too_far" | "unknown_service" | "no_dentist"; free?: string[] };
 
+const WHY = { taken: "time already taken", unavailable: "time not free", too_far: "too far ahead", unknown_service: "unknown service", no_dentist: "no dentist for this service" };
+
+// Log one booking event. Best-effort: never throws, so a log problem cannot fail the booking.
+export async function record(
+  sb: SupabaseClient, c: Clinic,
+  e: { actor: Actor; kind: "booked" | "moved" | "cancelled" | "book_failed"; verb: string; patientId: string; appointmentId?: string; service: string; date: string; time: string; dentistId?: string | null; why?: string },
+) {
+  try {
+    const { data } = await sb.from("patients").select("name").eq("id", e.patientId).maybeSingle();
+    const dentist = c.dentists.filter((d) => d.active).length > 1 ? c.dentists.find((d) => d.id === e.dentistId)?.name : null;
+    await logEvent(sb, {
+      clinicId: c.id, patientId: e.patientId, appointmentId: e.appointmentId, actor: e.actor, kind: e.kind, level: e.kind === "book_failed" ? "warn" : "info",
+      summary: visitSummary(e.verb, { patient: data?.name ?? null, service: e.service, date: e.date, time: e.time, dentist }, e.why),
+      data: { service: e.service, date: e.date, time: e.time, dentist_id: e.dentistId ?? null },
+    });
+  } catch (err) {
+    console.error("[events]", (err as Error).message);
+  }
+}
+
 // Shared by book and move: is `time` free on `date` for one of `dentists`, and who takes it?
 async function claim(sb: SupabaseClient, c: Clinic, dentists: Dentist[], minutes: number, date: string, time: string, prefer?: string, ignoreId?: string) {
   if (tooFar(date, localDate(new Date(), c.utc_offset_minutes))) return { ok: false, reason: "too_far" } as const;
@@ -97,44 +118,58 @@ async function claim(sb: SupabaseClient, c: Clinic, dentists: Dentist[], minutes
 
 export async function bookVisit(
   sb: SupabaseClient, c: Clinic,
-  v: { patientId: string; serviceId: string; date: string; time: string; dentistId?: string | null; source: string },
+  v: { patientId: string; serviceId: string; date: string; time: string; dentistId?: string | null; source: string; actor: Actor },
 ): Promise<BookResult> {
   const service = c.services.find((s) => s.id === v.serviceId);
   if (!service) return { ok: false, reason: "unknown_service" };
+  const fail = async (r: Exclude<BookResult, { ok: true }>) => {
+    await record(sb, c, { actor: v.actor, kind: "book_failed", verb: "Could not book", patientId: v.patientId, service: service.name, date: v.date, time: v.time, dentistId: v.dentistId, why: WHY[r.reason] });
+    return r;
+  };
   const got = await claim(sb, c, dentistsFor(c, v.serviceId, v.dentistId), service.minutes, v.date, v.time);
-  if (!got.ok) return got;
+  if (!got.ok) return fail(got);
   const { data, error } = await sb.from("appointments")
     .insert({ clinic_id: c.id, patient_id: v.patientId, service: service.name, service_id: service.id, dentist_id: got.dentistId, starts_at: got.starts_at, ends_at: got.ends_at, source: v.source })
     .select("id").single();
-  if (error?.code === "23P01") return { ok: false, reason: "taken" };
+  if (error?.code === "23P01") return fail({ ok: false, reason: "taken" });
   if (error) throw error;
+  await record(sb, c, { actor: v.actor, kind: "booked", verb: "Booked", patientId: v.patientId, appointmentId: data.id, service: service.name, date: v.date, time: v.time, dentistId: got.dentistId });
   return { ok: true, id: data.id, dentistId: got.dentistId, date: v.date, time: v.time };
 }
 
 export async function moveVisit(
   sb: SupabaseClient, c: Clinic,
-  v: { id: string; date: string; time: string; dentistId?: string | null },
+  v: { id: string; date: string; time: string; dentistId?: string | null; actor: Actor },
 ): Promise<BookResult> {
-  const { data: a, error: e1 } = await sb.from("appointments").select("dentist_id, service_id, starts_at, ends_at").eq("id", v.id).eq("clinic_id", c.id).single();
+  const { data: a, error: e1 } = await sb.from("appointments").select("dentist_id, service_id, service, patient_id, starts_at, ends_at").eq("id", v.id).eq("clinic_id", c.id).single();
   if (e1) throw e1;
   const minutes = (Date.parse(a.ends_at) - Date.parse(a.starts_at)) / 60_000;
   // A visit whose service was archived has no match in c.services: only a chosen or its current dentist can take it.
   const dentists = a.service_id && c.services.some((s) => s.id === a.service_id)
     ? dentistsFor(c, a.service_id, v.dentistId)
     : c.dentists.filter((d) => d.active && d.id === (v.dentistId ?? a.dentist_id));
+  const fail = async (r: Exclude<BookResult, { ok: true }>) => {
+    await record(sb, c, { actor: v.actor, kind: "book_failed", verb: "Could not move", patientId: a.patient_id, appointmentId: v.id, service: a.service, date: v.date, time: v.time, dentistId: v.dentistId ?? a.dentist_id, why: WHY[r.reason] });
+    return r;
+  };
   const got = await claim(sb, c, dentists, minutes, v.date, v.time, v.dentistId ?? a.dentist_id, v.id);
-  if (!got.ok) return got;
+  if (!got.ok) return fail(got);
   const { error } = await sb.from("appointments")
     .update({ dentist_id: got.dentistId, starts_at: got.starts_at, ends_at: got.ends_at, reminded_24h_at: null, reminded_2h_at: null, confirmed_at: null })
     .eq("id", v.id).eq("clinic_id", c.id);
-  if (error?.code === "23P01") return { ok: false, reason: "taken" };
+  if (error?.code === "23P01") return fail({ ok: false, reason: "taken" });
   if (error) throw error;
+  await record(sb, c, { actor: v.actor, kind: "moved", verb: "Moved", patientId: a.patient_id, appointmentId: v.id, service: a.service, date: v.date, time: v.time, dentistId: got.dentistId });
   return { ok: true, id: v.id, dentistId: got.dentistId, date: v.date, time: v.time };
 }
 
-export async function cancelVisit(sb: SupabaseClient, id: string): Promise<void> {
-  const { error } = await sb.from("appointments").update({ status: "cancelled" }).eq("id", id);
+export async function cancelVisit(sb: SupabaseClient, c: Clinic, id: string, actor: Actor): Promise<void> {
+  const { data: a } = await sb.from("appointments").select("patient_id, service, dentist_id, starts_at").eq("id", id).eq("clinic_id", c.id).maybeSingle();
+  const { error } = await sb.from("appointments").update({ status: "cancelled" }).eq("id", id).eq("clinic_id", c.id);
   if (error) throw error;
+  if (!a) return;
+  const s = new Date(a.starts_at);
+  await record(sb, c, { actor, kind: "cancelled", verb: "Cancelled", patientId: a.patient_id, appointmentId: id, service: a.service, date: localDate(s, c.utc_offset_minutes), time: localTime(s, c.utc_offset_minutes), dentistId: a.dentist_id });
 }
 
 // Future booked visits that no longer fit this dentist: outside their hours, inside time off, or any if inactive.
