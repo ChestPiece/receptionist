@@ -4,7 +4,7 @@ import { createAiSdkUiMessageStreamResponse } from "@openai/agents-extensions/ai
 import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 import { after } from "next/server";
 import { z } from "zod";
-import { capText, RATE_MAX, RATE_WINDOW_MS, slowDown, sorry, stillPaused, trimHistory } from "@/lib/agent";
+import { appendHistory, capText, RATE_MAX, RATE_WINDOW_MS, slowDown, sorry, stillPaused, trimHistory } from "@/lib/agent";
 import { clinicBySlug } from "@/lib/clinics";
 import { db, logMessages, logUsage } from "@/lib/db";
 import { reviewAndLog } from "@/lib/reviewer";
@@ -78,25 +78,24 @@ export async function POST(req: Request) {
   if ((count ?? 0) >= RATE_MAX) return fixed(slowDown(clinic.phone));
 
   const { data: convo } = await sb.from("conversations").select("history, bot_paused, updated_at").eq("patient_id", patient.id).maybeSingle();
-  const saved = (convo?.history ?? []) as AgentInputItem[];
+  const saved = trimHistory((convo?.history ?? []) as AgentInputItem[]);
   const paused = stillPaused(convo);
   // While staff own the chat, updated_at stays put so the 30-min pause can lapse (same as agent.ts).
-  const save = async (history: AgentInputItem[], reply: string | undefined) => {
+  const save = async (items: AgentInputItem[], reply: string | undefined) => {
     await logMessages(clinic.id, patient.id, "web", [{ role: "patient", body: text }, ...(reply ? [{ role: "assistant" as const, body: reply }] : [])]);
-    const { error } = await sb.from("conversations").upsert({ patient_id: patient.id, history: trimHistory(history), ...(paused ? {} : { updated_at: new Date().toISOString() }) });
-    if (error) console.error("[history]", error.message);
+    await appendHistory(patient.id, items, !paused);
   };
 
   // Safety first, same as WhatsApp: a fixed reply, the model does not run.
   if (isEmergency(text)) {
     const reply = emergencyReply(text, clinic.phone);
-    after(() => save([...saved, user(text), assistant(reply)], reply));
+    after(() => save([user(text), assistant(reply)], reply));
     return fixed(reply);
   }
 
   // Staff own the chat: keep the message for them, Sara stays quiet.
   if (paused) {
-    after(() => save([...saved, user(text)], undefined));
+    after(() => save([user(text)], undefined));
     return fixed(HELD);
   }
 
@@ -106,7 +105,7 @@ export async function POST(req: Request) {
       try {
         await result.completed;
         await logUsage(clinic.id, "web", result.state.usage);
-        await save(result.history, result.finalOutput);
+        await save(result.history.slice(saved.length), result.finalOutput);
         await reviewAndLog({ clinic, patientId: patient.id, channel: "web", userText: text, reply: result.finalOutput, items: result.newItems });
       } catch (e) {
         console.error("[chat]", (e as Error).message);

@@ -1,6 +1,6 @@
 // Outbound jobs run by POST /api/cron every 15 min (pg_cron + pg_net), for every active clinic: reminders and follow-ups.
-import { assistant, type AgentInputItem } from "@openai/agents";
-import { stillPaused, trimHistory } from "./agent";
+import { assistant } from "@openai/agents";
+import { HISTORY_MAX, stillPaused } from "./agent";
 import { bookingSource } from "./booking";
 import { activeClinics, personaName, type Clinic } from "./clinics";
 import { db, logMessages } from "./db";
@@ -58,12 +58,12 @@ export const followupDue = (c: Chat, now: Date) => {
   );
 };
 
-// ponytail: the service the chat mentioned last, by plain name match. Arabic service names are not matched yet.
-export function guessService(historyJson: string, services: string[]) {
+// ponytail: the service the chat mentioned last, by plain name match (English or Arabic name).
+export function guessService(historyJson: string, services: { name: string; name_ar: string | null }[]) {
   const text = historyJson.toLowerCase();
   let best: { name: string; at: number } | null = null;
-  for (const name of services) {
-    const at = text.lastIndexOf(name.toLowerCase());
+  for (const { name, name_ar } of services) {
+    const at = Math.max(text.lastIndexOf(name.toLowerCase()), name_ar ? text.lastIndexOf(name_ar.toLowerCase()) : -1);
     if (at >= 0 && (!best || at > best.at)) best = { name, at };
   }
   return best?.name ?? null;
@@ -83,18 +83,16 @@ export function followupText(f: { name: string | null; service: string | null; s
 export { bookingSource };
 
 // Bilingual, like the other fixed replies: the patient's language is not stored.
-export function reminderText(r: { name: string | null; service: string; startsAt: Date; clinic: string; offsetMin: number }) {
+export function reminderText(r: { name: string | null; service: string; startsAt: Date; clinic: string; offsetMin: number; dentist?: string | null }) {
   const first = r.name?.trim().split(/\s+/)[0];
-  return `Hi${first ? ` ${first}` : ""}, a reminder of your ${r.service} at ${r.clinic} on ${when(r.startsAt, r.offsetMin, "en-US")}. Reply 1 to confirm or 2 to change it.
-مرحباً${first ? ` ${first}` : ""}، تذكير بموعدك (${r.service}) في ${r.clinic} يوم ${when(r.startsAt, r.offsetMin, "ar-AE")}. أرسل 1 للتأكيد أو 2 لتغيير الموعد.`;
+  const [en, ar] = r.dentist ? [`${r.service} with ${r.dentist}`, `${r.service} مع ${r.dentist}`] : [r.service, r.service];
+  return `Hi${first ? ` ${first}` : ""}, a reminder of your ${en} at ${r.clinic} on ${when(r.startsAt, r.offsetMin, "en-US")}. Reply 1 to confirm or 2 to change it.
+مرحباً${first ? ` ${first}` : ""}، تذكير بموعدك (${ar}) في ${r.clinic} يوم ${when(r.startsAt, r.offsetMin, "ar-AE")}. أرسل 1 للتأكيد أو 2 لتغيير الموعد.`;
 }
 
 // In the chat history, so the agent understands the patient's reply to an outbound message.
 export async function appendToChat(patientId: string, text: string) {
-  const sb = db();
-  const { data } = await sb.from("conversations").select("history").eq("patient_id", patientId).maybeSingle();
-  const history = (data?.history ?? []) as AgentInputItem[];
-  const { error } = await sb.from("conversations").upsert({ patient_id: patientId, history: trimHistory([...history, assistant(text)]) }); // updated_at untouched: it times a staff pause
+  const { error } = await db().rpc("append_history", { conv: patientId, items: [assistant(text)], max: HISTORY_MAX }); // atomic; updated_at untouched: it times a staff pause
   if (error) console.error("[outbound history]", error.message);
 }
 
@@ -115,7 +113,7 @@ async function sendReminders(clinic: Clinic, now: Date, budget: number) {
   const sb = db();
   const { data, error } = await sb
     .from("appointments")
-    .select("id, service, starts_at, created_at, reminded_24h_at, reminded_2h_at, patient_id, patients!inner(wa_id, name)")
+    .select("id, service, starts_at, created_at, reminded_24h_at, reminded_2h_at, patient_id, dentist_id, patients!inner(wa_id, name)")
     .eq("patients.is_test", false)
     .eq("clinic_id", clinic.id)
     .eq("status", "booked")
@@ -141,7 +139,7 @@ async function sendReminders(clinic: Clinic, now: Date, budget: number) {
     if (!claimed.length) continue;
     const patient = v.patients as unknown as { wa_id: string | null; name: string | null };
     if (!patient.wa_id) continue; // web chat patient: no WhatsApp to remind on. ponytail: email/SMS reminders later
-    const text = reminderText({ name: patient.name, service: v.service, startsAt: new Date(v.starts_at), clinic: clinic.name, offsetMin: clinic.utc_offset_minutes });
+    const text = reminderText({ name: patient.name, service: v.service, startsAt: new Date(v.starts_at), clinic: clinic.name, offsetMin: clinic.utc_offset_minutes, dentist: clinic.dentists.filter((d) => d.active).length > 1 ? clinic.dentists.find((d) => d.id === v.dentist_id)?.name : null });
     const at = new Date(v.starts_at);
     const summary = visitSummary(`Sent ${kind} reminder to`, { patient: patient.name, service: v.service, date: localDate(at, clinic.utc_offset_minutes), time: localTime(at, clinic.utc_offset_minutes) });
     if (await send(clinic, patient.wa_id, text, v.patient_id, "reminder", summary, v.id)) sent++;
@@ -195,7 +193,7 @@ async function sendFollowups(clinic: Clinic, now: Date, budget: number) {
       .select("patient_id");
     if (claimError) throw claimError;
     if (!claimed.length) continue;
-    const service = guessService(JSON.stringify(convo.history), clinic.services.map((s) => s.name));
+    const service = guessService(JSON.stringify(convo.history), clinic.services);
     const slot = await nextFree(clinic, service ?? clinic.services[0]?.name, now);
     const text = followupText({ name: patient.name, service, slot, clinic: clinic.name, persona: personaName(clinic) });
     if (await send(clinic, wa, text, patient.id, "followup", `Sent a follow-up to ${patient.name ?? "a patient"}${service ? ` · ${service}` : ""}`)) sent++;

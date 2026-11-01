@@ -76,11 +76,17 @@ export function safeMediaUrl(raw: string) {
   );
 }
 
-// Append this run's turns (the patient message onward) to whatever is saved now, so a parallel run's turns survive.
-export const mergeHistory = (latest: AgentInputItem[], savedLen: number, result: AgentInputItem[]) => [
-  ...latest,
-  ...result.slice(savedLen),
-];
+// Items kept per chat by append_history: a plain tail cut, so loadHistory/route trim the front to a user message again.
+export const HISTORY_MAX = 80;
+
+// Append turns to the saved history in one statement, so parallel runs keep each other's turns. Never throws: the reply is already out.
+// `touch` also bumps updated_at (a patient turn); staff pauses are timed from it, so staff-held saves leave it alone.
+export async function appendHistory(patientId: string, items: AgentInputItem[], touch = false) {
+  const sb = db();
+  const { error } = await sb.rpc("append_history", { conv: patientId, items, max: HISTORY_MAX });
+  if (error) return console.error("[history]", error.message);
+  if (touch) await sb.from("conversations").update({ updated_at: new Date().toISOString() }).eq("patient_id", patientId);
+}
 
 // WhatsApp-safe punctuation: no en/em dashes (they read as machine-written). Hyphens in words stay.
 export const tidy = (text: string) =>
@@ -152,7 +158,7 @@ export async function handleMessage(clinic: Clinic, msg: IncomingMessage) {
   const loadHistory = async () => {
     const { data, error } = await sb.from("conversations").select("history, bot_paused, updated_at").eq("patient_id", patient.id).maybeSingle();
     if (error) throw error;
-    return { convo: data, history: (data?.history ?? []) as AgentInputItem[] };
+    return { convo: data, history: trimHistory((data?.history ?? []) as AgentInputItem[]) };
   };
 
   try {
@@ -163,8 +169,7 @@ export async function handleMessage(clinic: Clinic, msg: IncomingMessage) {
       await send(reply);
       await answered();
       await logMessages(clinic.id, patient.id, "whatsapp", [{ role: "patient", body: own }, { role: "assistant", body: reply }]);
-      const { history } = await loadHistory();
-      await sb.from("conversations").upsert({ patient_id: patient.id, history: trimHistory([...history, user(own), assistant(reply)]), updated_at: new Date().toISOString() });
+      await appendHistory(patient.id, [user(own), assistant(reply)], true);
       return;
     }
     // Opt-out is deterministic too: no follow-up, recall or waitlist messages after this. Reminders for booked visits continue.
@@ -174,8 +179,7 @@ export async function handleMessage(clinic: Clinic, msg: IncomingMessage) {
       await send(stopReply);
       await answered();
       await logMessages(clinic.id, patient.id, "whatsapp", [{ role: "patient", body: own }, { role: "assistant", body: stopReply }]);
-      const { history } = await loadHistory();
-      await sb.from("conversations").upsert({ patient_id: patient.id, history: trimHistory([...history, user(own), assistant(stopReply)]) });
+      await appendHistory(patient.id, [user(own), assistant(stopReply)]);
       return;
     }
 
@@ -205,7 +209,7 @@ export async function handleMessage(clinic: Clinic, msg: IncomingMessage) {
 
     if (stillPaused(convo)) {
       // Staff have this chat. Keep the messages (updated_at untouched, so the pause timer runs on) for context when it lapses.
-      await sb.from("conversations").update({ history: trimHistory([...saved, user(text)]) }).eq("patient_id", patient.id);
+      await appendHistory(patient.id, [user(text)]);
       await answered();
       await logMessages(clinic.id, patient.id, "whatsapp", [{ role: "patient", body: text }]);
       return;
@@ -228,13 +232,7 @@ export async function handleMessage(clinic: Clinic, msg: IncomingMessage) {
       logMessages(clinic.id, patient.id, "whatsapp", [{ role: "patient", body: text }, ...(reply ? [{ role: "assistant" as const, body: reply }] : [])]).catch((e) =>
         console.error("[log]", (e as Error).message),
       ),
-      (async () => {
-        const { history: latest } = await loadHistory();
-        const { error } = await sb
-          .from("conversations")
-          .upsert({ patient_id: patient.id, history: trimHistory(mergeHistory(latest, saved.length, result.history)), updated_at: new Date().toISOString() });
-        if (error) throw error;
-      })().catch((e) => console.error("[history]", (e as Error).message)),
+      appendHistory(patient.id, result.history.slice(saved.length), true), // this run's turns only
     ]);
     // Already inside the webhook's after(); the reviewer never throws and the reply is out.
     await reviewAndLog({ clinic, patientId: patient.id, channel: "whatsapp", userText: text, reply, items: result.newItems });

@@ -5,6 +5,7 @@ import { logEvent, visitSummary, type Actor } from "./events";
 import { DAYS, freeSlots, localDate, localTime, toUtc, type Hours } from "./slots";
 
 export const HORIZON_DAYS = 60;
+const DAY_MS = 86_400_000;
 export type Busy = { dentistId: string; start: Date; end: Date };
 export type Free = { time: string; dentistIds: string[] };
 
@@ -33,9 +34,18 @@ export function freeByDentist(dentists: Dentist[], busy: Busy[], minutes: number
 export const pickDentist = (ids: string[], load: Record<string, number>) =>
   [...ids].sort((a, b) => (load[a] ?? 0) - (load[b] ?? 0))[0];
 
+// The first `n` days (date order) that have any free time: the "earliest" search.
+export const firstDays = (free: Record<string, Free[]>, n = 3) =>
+  Object.entries(free).filter(([, f]) => f.length).sort(([a], [b]) => a.localeCompare(b)).slice(0, n);
+
+// Does this dentist have time off touching that clinic-local date?
+export const isAway = (off: Busy[], dentistId: string, date: string, offsetMin: number) => {
+  const start = toUtc(date, "00:00", offsetMin).getTime();
+  return off.some((o) => o.dentistId === dentistId && o.start.getTime() < start + DAY_MS && o.end.getTime() > start);
+};
+
 // ---------------------------------------------------------------- DB layer (sb is any Supabase client)
 
-const DAY_MS = 86_400_000;
 const dateList = (from: string, days: number) =>
   Array.from({ length: days }, (_, i) => new Date(Date.parse(`${from}T00:00:00Z`) + i * DAY_MS).toISOString().slice(0, 10));
 
@@ -53,31 +63,41 @@ async function busyFor(sb: SupabaseClient, c: Clinic, ids: string[], from: strin
   if (off.error) throw off.error;
   const busy = (r: { dentist_id: string; starts_at: string; ends_at: string }): Busy => ({ dentistId: r.dentist_id, start: new Date(r.starts_at), end: new Date(r.ends_at) });
   const visits = appts.data.filter((a) => a.id !== ignoreId).map(busy);
-  return { visits, blocks: [...visits, ...off.data.map(busy)] };
+  const offs = off.data.map(busy);
+  return { visits, off: offs, blocks: [...visits, ...offs] };
 }
 
 // Free times per date for these dentists, plus each dentist's visit count per date (for pickDentist).
 async function freeFor(sb: SupabaseClient, c: Clinic, dentists: Dentist[], minutes: number, from: string, days: number, ignoreId?: string) {
   const free: Record<string, Free[]> = {};
   const load: Record<string, Record<string, number>> = {};
-  if (!dentists.length) return { free, load };
-  const { visits, blocks } = await busyFor(sb, c, dentists.map((d) => d.id), from, days, ignoreId);
+  if (!dentists.length) return { free, load, off: [] as Busy[] };
+  const { visits, blocks, off } = await busyFor(sb, c, dentists.map((d) => d.id), from, days, ignoreId);
   for (const v of visits) {
     const day = (load[localDate(v.start, c.utc_offset_minutes)] ??= {});
     day[v.dentistId] = (day[v.dentistId] ?? 0) + 1;
   }
   const now = new Date();
   for (const date of dateList(from, days)) free[date] = freeByDentist(dentists, blocks, minutes, date, now, c.utc_offset_minutes);
-  return { free, load };
+  return { free, load, off };
+}
+
+// Free times per date plus the time off of these dentists in the range (for "<dentist> is away").
+export async function search(
+  sb: SupabaseClient, c: Clinic,
+  q: { serviceId: string; from: string; days: number; dentistId?: string | null; ignoreId?: string },
+) {
+  const service = c.services.find((s) => s.id === q.serviceId);
+  if (!service) return { free: {} as Record<string, Free[]>, off: [] as Busy[] };
+  const { free, off } = await freeFor(sb, c, dentistsFor(c, q.serviceId, q.dentistId), service.minutes, q.from, q.days, q.ignoreId);
+  return { free, off };
 }
 
 export async function availability(
   sb: SupabaseClient, c: Clinic,
   q: { serviceId: string; from: string; days: number; dentistId?: string | null; ignoreId?: string },
 ): Promise<Record<string, Free[]>> {
-  const service = c.services.find((s) => s.id === q.serviceId);
-  if (!service) return {};
-  return (await freeFor(sb, c, dentistsFor(c, q.serviceId, q.dentistId), service.minutes, q.from, q.days, q.ignoreId)).free;
+  return (await search(sb, c, q)).free;
 }
 
 export type BookResult =

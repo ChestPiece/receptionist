@@ -55,7 +55,7 @@ export async function staffReply(patientId: string, form: FormData): Promise<str
     sb.from("messages").insert({ clinic_id: patient.clinic_id, patient_id: patient.id, channel: patient.wa_id ? "whatsapp" : "web", role: "staff", body: text }),
     // A staff reply keeps the chat paused and tells Sara what was said, for when she takes it back.
     sb.from("conversations").update({ bot_paused: true, updated_at: new Date().toISOString() }).eq("patient_id", patient.id),
-    appendToChat(patient.id, text),
+    appendToChat(patient.id, `[Front desk] ${text}`),
     logEvent(sb, { clinicId: patient.clinic_id, patientId: patient.id, actor: "staff", kind: "staff_reply", summary: `Replied to ${patient.name ?? "a patient"}` }),
   ]);
   refresh();

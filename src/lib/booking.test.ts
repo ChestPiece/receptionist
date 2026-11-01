@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { bookingSource, dentistsFor, freeByDentist, hoursInside, pickDentist, tooFar } from "./booking";
+import { bookingSource, dentistsFor, firstDays, freeByDentist, hoursInside, isAway, pickDentist, tooFar, type Free } from "./booking";
 import type { Dentist } from "./clinics";
 import { toUtc, type Hours } from "./slots";
 
@@ -51,4 +51,17 @@ test("hoursInside: dentist windows must sit inside opening hours", () => {
   expect(hoursInside({ sat: [["10:00", "12:00"]] }, { sat: [["09:00", "13:00"]] })).toBe(true);
   expect(hoursInside({ fri: [["09:00", "10:00"]] }, { fri: [["16:00", "21:00"]] })).toBe(false);
   expect(hoursInside({ mon: [["10:00", "11:00"]] }, { sat: [["09:00", "13:00"]] })).toBe(false);
+});
+
+test("firstDays: earliest window keeps the first 3 days that have times", () => {
+  const f = (t: string): Free[] => [{ time: t, dentistIds: ["a"] }];
+  const free = { "2026-11-07": [], "2026-11-08": f("09:00"), "2026-11-09": [], "2026-11-10": f("10:00"), "2026-11-11": f("11:00"), "2026-11-12": f("12:00") };
+  expect(firstDays(free).map(([d]) => d)).toEqual(["2026-11-08", "2026-11-10", "2026-11-11"]);
+});
+
+test("isAway: time off on the local day, only for that dentist", () => {
+  const off = [{ dentistId: "a", start: toUtc("2026-11-07", "00:00", 240), end: toUtc("2026-11-08", "00:00", 240) }];
+  expect(isAway(off, "a", "2026-11-07", 240)).toBe(true);
+  expect(isAway(off, "a", "2026-11-08", 240)).toBe(false);
+  expect(isAway(off, "l", "2026-11-07", 240)).toBe(false);
 });

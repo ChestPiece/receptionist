@@ -41,3 +41,9 @@ test("dentists show in the prompt only when the clinic has more than one", () =>
   expect(two).toContain('"dentists":[{"name":"Dr. Amal Haddad"');
   expect(two).toContain("Ask which dentist only if");
 });
+
+test("the prompt tells Sara how to read staff messages and web visits", () => {
+  const p = buildInstructions(clinic, null, null, new Date("2026-10-30T05:00:00Z"));
+  expect(p).toContain("[Front desk]");
+  expect(p).toContain("booked in this chat");
+});

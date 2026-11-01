@@ -38,6 +38,8 @@ test("reminder text is bilingual, names the visit and asks for 1 or 2", () => {
   expect(text).toContain("Reply 1 to confirm or 2 to change it");
   expect(text).toMatch(/[؀-ۿ]/); // Arabic part
   expect(reminderText({ name: null, service: "Check-up", startsAt: new Date(), clinic: "X", offsetMin: DUBAI })).toMatch(/^Hi,/);
+  expect(text).not.toContain("with Dr");
+  expect(reminderText({ name: null, service: "Check-up", startsAt: new Date(), clinic: "X", offsetMin: DUBAI, dentist: "Dr. Lina" })).toContain("Check-up with Dr. Lina");
 });
 
 test("one follow-up for a chat that went quiet 3 to 20 hours ago without a booking", () => {
@@ -55,9 +57,10 @@ test("one follow-up for a chat that went quiet 3 to 20 hours ago without a booki
 });
 
 test("the follow-up names the service asked about and offers one time", () => {
-  const services = ["Check-up", "Teeth whitening", "Filling"];
+  const services = ["Check-up", "Teeth whitening", "Filling"].map((name) => ({ name, name_ar: null as string | null }));
   expect(guessService('[{"content":"how much is teeth whitening?"},{"content":"and a filling"}]', services)).toBe("Filling");
   expect(guessService('[{"content":"hi"}]', services)).toBe(null);
+  expect(guessService('[{"content":"بكم تبييض الأسنان؟"}]', [...services, { name: "Teeth whitening", name_ar: "تبييض الأسنان" }])).toBe("Teeth whitening");
   const text = followupText({ name: "Anas Altaf", service: "Teeth whitening", slot: "Fri, Oct 23, 4:00 PM", clinic: "Sample Smile Dental" });
   expect(text).toContain("Hi Anas");
   expect(text).toContain("Teeth whitening");

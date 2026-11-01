@@ -1,6 +1,6 @@
 import { user, type AgentInputItem, type RunItem } from "@openai/agents";
 import { expect, test } from "vitest";
-import { capText, mergeHistory, safeMediaUrl, sorry, stillPaused, tidy, trimHistory } from "./agent";
+import { capText, safeMediaUrl, sorry, stillPaused, tidy, trimHistory } from "./agent";
 import { tooFar, wroteData } from "./sara";
 import { isEmergency } from "./safety";
 
@@ -61,11 +61,4 @@ test("the error reply only promises staff when staff get alerts", () => {
   expect(sorry("+971 4", null)).toContain("+971 4");
   expect(sorry(null, null)).not.toContain("null");
   expect(sorry("+971 4", "971500000000@c.us")).toMatch(/team member will reply/);
-});
-
-test("history save appends this run's turns to the latest saved history", () => {
-  const input = [user("old"), user("mine")];
-  const result = [...input, user("reply-stand-in")];
-  const latest = [user("old"), user("other run"), user("other reply")];
-  expect(mergeHistory(latest, 1, result)).toEqual([...latest, user("mine"), user("reply-stand-in")]);
 });
