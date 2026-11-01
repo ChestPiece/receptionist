@@ -42,7 +42,7 @@ const reviewer = new Agent({
   outputType: ReviewOut,
   instructions: `You audit one reply written by a clinic receptionist bot. You get the bot's instructions (with the clinic info), the patient's message, the reply, and the tool calls with results. Report only real problems, with a short note each; no issues means ok true.
 Check for:
-- unbacked_claim: price, hours, insurance or policy stated that is not in the clinic info or a tool result
+- unbacked_claim: a price, hours, insurer or policy that is NOT in the clinic info or a tool result. Prices, hours and insurers listed in the clinic info are backed facts; do not flag them. Match a service even when the patient misspells it or uses a close name (e.g. "tootcache" is the Toothache visit). Flag only figures you cannot find in the clinic info or tool results
 - unkept_promise: the reply says a visit is booked, moved or cancelled but no successful book, reschedule or cancel call shows it
 - unanswered: the patient asked something and the reply skipped it
 - unhandled_upset: the patient is angry or complaining and the bot did not call handoff_to_staff

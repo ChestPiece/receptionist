@@ -5,7 +5,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { availability, bookVisit, cancelVisit, moveVisit, type BookResult, type Free } from "@/lib/booking";
 import { deskConfig, loadClinic } from "@/lib/clinics";
-import { CLINIC_COOKIE, desk } from "@/lib/dashboard";
+import { ACTIVITY_SEEN_COOKIE, CLINIC_COOKIE, desk } from "@/lib/dashboard";
 import { logEvent } from "@/lib/events";
 import { appendToChat } from "@/lib/jobs";
 import { normUaePhone, waIdOf } from "@/lib/phone";
@@ -16,6 +16,12 @@ import { sendText } from "@/lib/whatsapp";
 
 export async function pickClinic(form: FormData) {
   (await cookies()).set(CLINIC_COOKIE, String(form.get("clinic")), { path: "/dashboard", httpOnly: true, sameSite: "lax", maxAge: 60 * 60 * 24 * 365 });
+  refresh();
+}
+
+// The Activity page calls this on mount; the sidebar badge then counts only warnings newer than this.
+export async function markActivitySeen() {
+  (await cookies()).set(ACTIVITY_SEEN_COOKIE, new Date().toISOString(), { path: "/dashboard", httpOnly: true, sameSite: "lax", maxAge: 60 * 60 * 24 * 30 });
   refresh();
 }
 
@@ -31,6 +37,7 @@ export async function setPaused(patientId: string, paused: boolean) {
   if (error) throw new Error("Could not update the chat.");
   const { data: p } = await sb.from("patients").select("clinic_id, name").eq("id", patientId).maybeSingle();
   if (p) await logEvent(sb, { clinicId: p.clinic_id, patientId, actor: "staff", kind: paused ? "takeover" : "handback", summary: `${paused ? "Took over" : "Handed back"} the chat with ${p.name ?? "a patient"}` });
+  if (!paused) await appendToChat(patientId, "[Front desk] (handed the chat back to Sara)"); // Sara sees that staff finished
   refresh();
 }
 

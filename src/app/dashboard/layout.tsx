@@ -6,7 +6,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarHeader, SidebarInset, SidebarProvider, SidebarRail } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { stillPaused } from "@/lib/agent";
-import { desk } from "@/lib/dashboard";
+import { cookies } from "next/headers";
+import { ACTIVITY_SEEN_COOKIE, desk } from "@/lib/dashboard";
 import { signOut } from "./actions";
 import { ClinicSwitcher, CountBadge, Live, Nav, SettingsLink, TestSaraLink } from "./shell";
 
@@ -75,11 +76,13 @@ async function NeedsStaff() {
   return <CountBadge count={(convos ?? []).filter((c) => stillPaused(c)).length} />;
 }
 
-// Warnings in the last 24 h. Shows nothing if the activity table is not set up yet.
+// Warnings in the last 24 h that arrived after the Activity page was last opened. Shows nothing if the activity table is not set up yet.
 async function Warnings() {
   const { sb, clinic } = await desk();
   if (!clinic) return null;
-  const { count } = await sb.from("agent_events").select("id", { count: "exact", head: true }).eq("clinic_id", clinic.id).eq("level", "warn").gte("created_at", new Date(new Date().getTime() - 86_400_000).toISOString());
+  const seen = Date.parse((await cookies()).get(ACTIVITY_SEEN_COOKIE)?.value ?? "");
+  const since = Math.max(new Date().getTime() - 86_400_000, Number.isNaN(seen) ? 0 : seen);
+  const { count } = await sb.from("agent_events").select("id", { count: "exact", head: true }).eq("clinic_id", clinic.id).eq("level", "warn").gt("created_at", new Date(since).toISOString());
   return <CountBadge count={count ?? 0} />;
 }
 

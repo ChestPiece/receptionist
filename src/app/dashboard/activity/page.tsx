@@ -5,6 +5,7 @@ import { desk, who } from "@/lib/dashboard";
 import { localDate, localTime } from "@/lib/slots";
 import { cn } from "@/lib/utils";
 import { PageBody, PageHeader } from "../page-frame";
+import { SeenActivity } from "../shell";
 
 export const metadata = { title: "Activity" };
 
@@ -12,14 +13,14 @@ const PAGE = 50;
 const ACTORS = ["sara", "staff", "system", "reviewer"] as const;
 const KINDS = ["booked", "moved", "cancelled", "book_failed", "confirmed", "handoff", "takeover", "handback", "staff_reply", "arrived", "no_show", "reminder", "followup"];
 const DAY = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
-type Row = { id: string; actor: string; kind: string; level: string; summary: string; created_at: string; patient_id: string | null; patients: { name: string | null; phone: string | null; wa_id: string | null } | null };
+type Row = { id: string; actor: string; kind: string; level: string; summary: string; created_at: string; patient_id: string | null; patients: { name: string | null; phone: string | null; wa_id: string | null; is_test: boolean | null } | null };
 
 export default async function Activity({ searchParams }: PageProps<"/dashboard/activity">) {
   const { sb, clinic } = await desk();
   if (!clinic) return null;
   const { actor, kind, warn, p, before } = (await searchParams) as { actor?: string; kind?: string; warn?: string; p?: string; before?: string };
 
-  let q = sb.from("agent_events").select("id, actor, kind, level, summary, created_at, patient_id, patients(name, phone, wa_id)").eq("clinic_id", clinic.id).order("created_at", { ascending: false }).limit(PAGE + 1);
+  let q = sb.from("agent_events").select("id, actor, kind, level, summary, created_at, patient_id, patients(name, phone, wa_id, is_test)").eq("clinic_id", clinic.id).order("created_at", { ascending: false }).limit(PAGE + 1);
   if (actor) q = q.eq("actor", actor);
   if (kind) q = q.eq("kind", kind);
   if (warn) q = q.eq("level", "warn");
@@ -36,6 +37,7 @@ export default async function Activity({ searchParams }: PageProps<"/dashboard/a
   return (
     <>
       <PageHeader title="Activity" />
+      <SeenActivity />
       <PageBody>
         <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2 sm:px-4">
           <div className="flex gap-1 overflow-x-auto">
@@ -75,7 +77,7 @@ export default async function Activity({ searchParams }: PageProps<"/dashboard/a
                     <TableCell><Badge variant={e.actor === "sara" ? "default" : e.actor === "reviewer" ? "destructive" : "secondary"}>{e.actor}</Badge></TableCell>
                     <TableCell className={cn("whitespace-normal", e.level === "warn" && "font-medium text-alert")}>{e.summary}</TableCell>
                     <TableCell className="pe-4 max-sm:hidden">
-                      {e.patient_id && <Link href={`/dashboard/inbox?p=${e.patient_id}`} className="hover:underline">{who(e.patients)}</Link>}
+                      {e.patient_id && <Link href={`/dashboard/inbox?p=${e.patient_id}`} className="hover:underline">{who(e.patients)}{e.patients?.is_test && <span className="ms-1.5 rounded bg-muted px-1.5 py-px text-[10.5px] font-medium text-muted-foreground">Test</span>}</Link>}
                     </TableCell>
                   </TableRow>
                 );

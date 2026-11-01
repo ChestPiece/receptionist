@@ -11,6 +11,7 @@ import { DAYS, localDate, localTime, type Hours } from "./slots";
 
 export type DeskClinic = { id: string; name: string; hours: Hours; utc_offset_minutes: number; phone: string | null; staff_whatsapp: string | null; role: Role };
 export const CLINIC_COOKIE = "desk_clinic";
+export const ACTIVITY_SEEN_COOKIE = "activity_seen";
 
 // RLS returns only clinics the user belongs to (every clinic for platform admins). Cached per request.
 export const desk = cache(async () => {

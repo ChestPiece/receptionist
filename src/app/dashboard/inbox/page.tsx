@@ -11,7 +11,6 @@ import { PageBody, PageHeader } from "../page-frame";
 import { BookFor } from "../schedule";
 import { Thread, type ThreadMsg } from "../thread";
 import { ReplyBox } from "./reply-box";
-import { setPaused } from "../actions";
 
 export const metadata = { title: "Inbox" };
 
@@ -46,16 +45,21 @@ export default async function Inbox({ searchParams }: PageProps<"/dashboard/inbo
   const current = all.find((r) => r.patient_id === p) ?? list[0];
   const open = current?.patient_id;
 
-  const [{ data: thread }, { data: upcoming }, { data: person }] = open
+  const [{ data: thread }, { data: upcoming }, { data: person }, { data: handoffs }] = open
     ? await Promise.all([
         open === p && pickedThread ? pickedThread : threadOf(open),
         sb.from("appointments").select("id, service, starts_at, dentist_id").eq("patient_id", open).eq("status", "booked").gt("starts_at", new Date().toISOString()).order("starts_at").limit(5),
         sb.from("patients").select("tags, notes").eq("id", open).maybeSingle(),
+        sb.from("agent_events").select("summary, created_at").eq("patient_id", open).eq("kind", "handoff").order("created_at", { ascending: false }).limit(1),
       ])
-    : [{ data: null }, { data: null }, { data: null }];
+    : [{ data: null }, { data: null }, { data: null }, { data: null }];
   const time = (iso: string) => localTime(new Date(iso), off);
   const lines = (thread ?? []).reverse().map((m) => ({ ...m, time: time(m.created_at) })) as ThreadMsg[];
-  const isPaused = open ? waiting.has(open) : false;
+  const isPaused = !!current && stillPaused(current.updated_at ? { bot_paused: !!current.bot_paused, updated_at: current.updated_at } : null);
+  // Sara's latest ask for help, only while no staff message has followed it.
+  const lastStaff = (thread ?? []).find((m) => m.role === "staff")?.created_at; // thread is newest first here
+  const ask = handoffs?.[0];
+  const handoff = ask && (!lastStaff || ask.created_at > lastStaff) ? ask.summary.replace(/^[^:]*: /, "") : null;
   const href = (q: Record<string, string | undefined>) => `/dashboard/inbox?${new URLSearchParams(Object.entries({ f, ...q }).filter((e): e is [string, string] => !!e[1]))}`;
   const multi = clinic.dentists.filter((d) => d.active).length > 1;
 
@@ -65,7 +69,7 @@ export default async function Inbox({ searchParams }: PageProps<"/dashboard/inbo
       <PageBody className="grid grid-cols-1 grid-rows-[minmax(0,1fr)] lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[300px_minmax(0,1fr)_280px]">
         {/* List: hidden on phones while a chat is open. */}
         <div className={cn("flex min-h-0 flex-col border-e", p && "max-lg:hidden")}>
-          <nav className="flex shrink-0 gap-1 overflow-x-auto border-b px-2 py-2" aria-label="Filter">
+          <nav className="flex shrink-0 flex-wrap gap-1 border-b px-2 py-2" aria-label="Filter">
             {TABS.map((t) => (
               <Link key={t.label} href={href({ f: t.f, p: undefined })} aria-current={f === t.f ? "true" : undefined}
                 className={cn("shrink-0 rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted", f === t.f && "bg-muted text-foreground")}>
@@ -105,15 +109,12 @@ export default async function Inbox({ searchParams }: PageProps<"/dashboard/inbo
                   <Link href={`/dashboard/patients/${current.patient_id}`} className="block truncate text-sm font-semibold hover:underline">{who(current)}</Link>
                   <span className="block truncate text-xs text-muted-foreground">{current.wa_id ? `WhatsApp · +${current.wa_id.replace(/@.*/, "")}` : `Website${current.phone ? ` · ${current.phone}` : ""}`}{isPaused ? " · staff have this chat" : " · Sara is answering"}</span>
                 </div>
-                <form action={setPaused.bind(null, current.patient_id, !isPaused)}>
-                  <Button size="sm" variant={isPaused ? "outline" : "default"}>{isPaused ? "Hand back to Sara" : "Take over"}</Button>
-                </form>
               </header>
               <div aria-live="polite" className="flex min-h-0 flex-1 flex-col-reverse overflow-y-auto">
                 <Thread lines={lines} />
               </div>
               <footer className="shrink-0 border-t p-3">
-                <ReplyBox patientId={current.patient_id} paused={isPaused} channel={current.wa_id ? "WhatsApp" : "the website chat"} />
+                <ReplyBox patientId={current.patient_id} paused={isPaused} handoff={handoff} channel={current.wa_id ? "WhatsApp" : "the website chat"} />
               </footer>
             </section>
 

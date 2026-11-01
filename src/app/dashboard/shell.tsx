@@ -7,7 +7,7 @@ import { useEffect, type ReactNode } from "react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { SidebarMenu, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem, useSidebar } from "@/components/ui/sidebar";
 import { supabaseBrowser } from "@/lib/supabase/client";
-import { pickClinic } from "./actions";
+import { markActivitySeen, pickClinic } from "./actions";
 
 const NAV = [
   { href: "/dashboard", label: "Today", icon: LayoutListIcon },
@@ -108,16 +108,33 @@ export function Live({ clinicId }: { clinicId: string }) {
       clearTimeout(t);
       t = setTimeout(() => router.refresh(), 1000);
     };
-    const channel = sb
+    let channel: ReturnType<typeof sb.channel> | undefined;
+    let gone = false;
+    // The socket must carry the user's token before joining, or it joins as anon and RLS drops every row.
+    const { data: sub } = sb.auth.onAuthStateChange((_e, s) => { if (s) sb.realtime.setAuth(s.access_token); });
+    void sb.auth.getSession().then(async ({ data }) => {
+      if (gone) return;
+      if (data.session) await sb.realtime.setAuth(data.session.access_token);
+      if (gone) return;
+      channel = sb
       .channel(`desk-${clinicId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "messages", filter: `clinic_id=eq.${clinicId}` }, soon)
       .on("postgres_changes", { event: "*", schema: "public", table: "appointments", filter: `clinic_id=eq.${clinicId}` }, soon)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "agent_events", filter: `clinic_id=eq.${clinicId}` }, soon)
-      .subscribe();
+      .subscribe((status, err) => { if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") console.error("[realtime]", status, err?.message); });
+    });
     return () => {
+      gone = true;
       clearTimeout(t);
-      sb.removeChannel(channel);
+      sub.subscription.unsubscribe();
+      if (channel) sb.removeChannel(channel);
     };
   }, [clinicId, router]);
+  return null;
+}
+
+// Mounted by the Activity page: marks it seen so the sidebar badge clears.
+export function SeenActivity() {
+  useEffect(() => { void markActivitySeen(); }, []);
   return null;
 }
