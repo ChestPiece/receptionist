@@ -116,7 +116,7 @@ export function Schedule({ columns, blocks, off, range, now, linkBase, setup }: 
                 className={cn("absolute inset-x-1 overflow-hidden rounded-md border-s-[3px] px-1.5 py-1 text-[11.5px] leading-tight outline-none transition-shadow hover:ring-2 hover:ring-ring focus-visible:ring-2 focus-visible:ring-ring", KIND[b.kind], b.muted && "opacity-50 line-through")}
                 style={{ top: (Math.max(b.start, lo) - lo) * ROW + 1, height: Math.max((b.end - Math.max(b.start, lo)) * ROW - 2, 20), borderInlineStartColor: b.color ?? "var(--primary)" }}
               >
-                <strong className="block truncate font-semibold">{b.title}</strong>
+                <strong className="block truncate font-semibold">{b.title}{b.test && <span className="ms-1 rounded bg-foreground/10 px-1 text-[10px] font-medium">Test</span>}</strong>
                 <span className="block truncate">{b.name}</span>
               </Link>
             ))}

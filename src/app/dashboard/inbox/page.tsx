@@ -22,6 +22,7 @@ const TABS = [
   { f: "staff", label: "Needs staff" },
   { f: "whatsapp", label: "WhatsApp" },
   { f: "web", label: "Website" },
+  { f: "test", label: "Test" },
 ] as const;
 const DAY = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
 
@@ -32,12 +33,16 @@ export default async function Inbox({ searchParams }: PageProps<"/dashboard/inbo
 
   const threadOf = (id: string) => sb.from("messages").select("id, role, body, created_at").eq("patient_id", id).order("id", { ascending: false }).limit(200);
   // One row per patient, newest first (inbox_list, RLS applies). When a chat is picked, its thread loads alongside.
-  const [{ data: rows, error }, pickedThread, clinic] = await Promise.all([sb.rpc("inbox_list", { clinic: picked.id }), p ? threadOf(p) : null, deskConfig(sb, picked.id)]);
+  const [{ data: rows, error }, pickedThread, clinic, { data: tests }] = await Promise.all([
+    sb.rpc("inbox_list", { clinic: picked.id }), p ? threadOf(p) : null, deskConfig(sb, picked.id),
+    sb.from("patients").select("id").eq("clinic_id", picked.id).eq("is_test", true), // inbox_list has no is_test column; no rows if 0008 is not applied
+  ]);
   if (error) throw error; // an empty inbox must never hide a failed load
   const off = clinic.utc_offset_minutes;
+  const testIds = new Set((tests ?? []).map((t) => t.id as string));
   const all = (rows ?? []) as Row[];
-  const waiting = new Set(all.filter((r) => stillPaused(r.updated_at ? { bot_paused: !!r.bot_paused, updated_at: r.updated_at } : null)).map((r) => r.patient_id));
-  const list = all.filter((r) => (f === "staff" ? waiting.has(r.patient_id) : f === "whatsapp" || f === "web" ? r.channel === f : true));
+  const waiting = new Set(all.filter((r) => !testIds.has(r.patient_id) && stillPaused(r.updated_at ? { bot_paused: !!r.bot_paused, updated_at: r.updated_at } : null)).map((r) => r.patient_id));
+  const list = all.filter((r) => (f === "test" ? testIds.has(r.patient_id) : !testIds.has(r.patient_id) && (f === "staff" ? waiting.has(r.patient_id) : f === "whatsapp" || f === "web" ? r.channel === f : true)));
   const current = all.find((r) => r.patient_id === p) ?? list[0];
   const open = current?.patient_id;
 
@@ -70,7 +75,7 @@ export default async function Inbox({ searchParams }: PageProps<"/dashboard/inbo
           </nav>
           <ScrollArea className="min-h-0 flex-1">
             <ul className="divide-y">
-              {list.length === 0 && <li className="p-4 text-sm text-muted-foreground">{f === "staff" ? "Nobody is waiting for staff." : "No chats here."}</li>}
+              {list.length === 0 && <li className="p-4 text-sm text-muted-foreground">{f === "staff" ? "Nobody is waiting for staff." : f === "test" ? "No test chats. Try Test Sara in the sidebar." : "No chats here."}</li>}
               {list.map((m) => (
                 <li key={m.patient_id}>
                   <Link href={href({ p: m.patient_id })} aria-current={m.patient_id === open ? "true" : undefined}

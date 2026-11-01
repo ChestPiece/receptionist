@@ -115,7 +115,8 @@ async function sendReminders(clinic: Clinic, now: Date, budget: number) {
   const sb = db();
   const { data, error } = await sb
     .from("appointments")
-    .select("id, service, starts_at, created_at, reminded_24h_at, reminded_2h_at, patient_id, patients(wa_id, name)")
+    .select("id, service, starts_at, created_at, reminded_24h_at, reminded_2h_at, patient_id, patients!inner(wa_id, name)")
+    .eq("patients.is_test", false)
     .eq("clinic_id", clinic.id)
     .eq("status", "booked")
     .gt("starts_at", new Date(now.getTime() + MIN_LEAD_MS).toISOString())
@@ -176,8 +177,8 @@ async function sendFollowups(clinic: Clinic, now: Date, budget: number) {
   for (const [wa, lastAt] of last) {
     if (sent >= budget) break;
     if (now.getTime() - Date.parse(lastAt) < 3 * HOUR) continue;
-    const { data: patient } = await sb.from("patients").select("id, name, opted_out").eq("clinic_id", clinic.id).eq("wa_id", wa).maybeSingle();
-    if (!patient) continue;
+    const { data: patient } = await sb.from("patients").select("id, name, opted_out, is_test").eq("clinic_id", clinic.id).eq("wa_id", wa).maybeSingle();
+    if (!patient || patient.is_test) continue;
     const [{ data: convo }, { count }] = await Promise.all([
       sb.from("conversations").select("history, bot_paused, updated_at, followup_sent_at").eq("patient_id", patient.id).maybeSingle(),
       sb.from("appointments").select("id", { count: "exact", head: true }).eq("patient_id", patient.id).eq("status", "booked").gt("starts_at", now.toISOString()),

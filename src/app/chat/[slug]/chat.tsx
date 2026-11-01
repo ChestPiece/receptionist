@@ -189,10 +189,11 @@ function SidebarBody({ name, sample, logo, persona, info, phone }: SideProps) {
 const STARTERS = ["Book a cleaning", "Anything free Thursday evening?", "مواعيدكم يوم السبت؟", "Do you take my insurance?"];
 
 // One anonymous id per browser, so Sara remembers the visitor between visits.
-function visitorId() {
+function visitorId(test?: boolean) {
   try {
-    let id = localStorage.getItem("visitor-id");
-    if (!id) localStorage.setItem("visitor-id", (id = crypto.randomUUID()));
+    const key = test ? "visitor-id-test" : "visitor-id"; // a separate id, so a staff test never flags a real visitor's chat
+    let id = localStorage.getItem(key);
+    if (!id) localStorage.setItem(key, (id = crypto.randomUUID()));
     return id;
   } catch {
     return crypto.randomUUID(); // storage blocked: this tab only
@@ -238,6 +239,7 @@ type ChatProps = {
   persona: string;
   phone: string | null;
   logo?: string;
+  test?: boolean;
   info: Info;
 };
 
@@ -253,7 +255,7 @@ const newest = (ms: Line[], floor: number) => Math.max(floor, ...ms.map((m) => N
 
 // Render at once; the visitor's earlier messages (text only) are fetched in the background and slotted in when they land.
 export function Chat(props: ChatProps) {
-  const [id] = useState(visitorId);
+  const [id] = useState(() => visitorId(props.test));
   const [start, setStart] = useState<{ history: UIMessage[]; paused: boolean; lastId: number } | null>(null);
   useEffect(() => {
     feed(props.slug, id).then((d) => setStart({ history: (d?.messages ?? []).map(toUi), paused: !!d?.paused, lastId: newest(d?.messages ?? [], 0) }));
@@ -261,7 +263,7 @@ export function Chat(props: ChatProps) {
   return <ChatView {...props} id={id} start={start} />;
 }
 
-function ChatView({ slug, clinicName, persona, phone, logo, info, id, start }: ChatProps & { id: string; start: { history: UIMessage[]; paused: boolean; lastId: number } | null }) {
+function ChatView({ slug, clinicName, persona, phone, logo, test, info, id, start }: ChatProps & { id: string; start: { history: UIMessage[]; paused: boolean; lastId: number } | null }) {
   const sample = /\(sample data\)/i.test(clinicName);
   const name = clinicName.replace(/\s*\(sample data\)/i, "");
   const [greeted, setGreeted] = useState(false);
@@ -270,7 +272,7 @@ function ChatView({ slug, clinicName, persona, phone, logo, info, id, start }: C
     transport: new DefaultChatTransport({
       api: "/api/chat",
       prepareSendMessagesRequest: ({ messages }) => ({
-        body: { slug, visitorId: id, message: messages.at(-1) },
+        body: { slug, visitorId: id, test, message: messages.at(-1) },
       }),
     }),
   });

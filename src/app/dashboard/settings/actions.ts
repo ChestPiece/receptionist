@@ -123,3 +123,13 @@ export async function saveBranding(v: { accent: string; logo: string }): Promise
   done(o.clinicId);
   return {};
 }
+
+// Test patients only (needs 0009: the delete policy matches is_test rows alone). Their visits, chats and messages cascade.
+export async function resetTestChats(): Promise<SaveResult> {
+  const o = await owner();
+  if ("error" in o) return o;
+  const { error } = await o.sb.from("patients").delete().eq("clinic_id", o.clinicId).eq("is_test", true);
+  if (error) return { error: "Could not reset the test chats." };
+  done(o.clinicId);
+  return {};
+}

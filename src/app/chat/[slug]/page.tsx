@@ -14,7 +14,7 @@ export async function generateMetadata({ params }: PageProps<"/chat/[slug]">) {
 
 const HEX = /^#[0-9a-f]{6}$/i; // clinic accent goes into inline CSS, so only plain hex gets through
 
-async function ClinicChat({ params }: { params: PageProps<"/chat/[slug]">["params"] }) {
+async function ClinicChat({ params, searchParams }: Pick<PageProps<"/chat/[slug]">, "params" | "searchParams">) {
   await connection();
   const { slug } = await params;
   const clinic = await getClinic(slug);
@@ -25,6 +25,7 @@ async function ClinicChat({ params }: { params: PageProps<"/chat/[slug]">["param
     <div style={style} className="contents">
       <Chat
         slug={slug}
+        test={(await searchParams).test === "1"}
         clinicName={clinic.name}
         persona={personaName(clinic)}
         phone={clinic.phone}
@@ -40,11 +41,11 @@ async function ClinicChat({ params }: { params: PageProps<"/chat/[slug]">["param
   );
 }
 
-export default function ChatPage({ params }: PageProps<"/chat/[slug]">) {
+export default function ChatPage({ params, searchParams }: PageProps<"/chat/[slug]">) {
   return (
     <main className="relative h-dvh overflow-hidden">
       <Suspense fallback={<div className="relative h-full animate-pulse" />}>
-        <ClinicChat params={params} />
+        <ClinicChat params={params} searchParams={searchParams} />
       </Suspense>
     </main>
   );

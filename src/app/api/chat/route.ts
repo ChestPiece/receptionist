@@ -10,6 +10,7 @@ import { db, logMessages, logUsage } from "@/lib/db";
 import { reviewAndLog } from "@/lib/reviewer";
 import { emergencyReply, isEmergency } from "@/lib/safety";
 import { streamSara } from "@/lib/sara";
+import { supabaseServer } from "@/lib/supabase/server";
 
 export const maxDuration = 60;
 
@@ -17,6 +18,7 @@ export const maxDuration = 60;
 const Body = z.object({
   slug: z.string().max(64),
   visitorId: z.uuid(),
+  test: z.boolean().optional(),
   message: z.object({ role: z.literal("user"), parts: z.array(z.object({ type: z.string(), text: z.string().optional() })) }),
 });
 
@@ -32,6 +34,16 @@ const fixed = (text: string) =>
     }),
   });
 
+// ?test=1 counts only for a signed-in member of this clinic or a platform admin (RLS lets them read the clinic row); anyone else is a normal visitor.
+async function isStaffOf(clinicId: string) {
+  try {
+    const { data } = await (await supabaseServer()).from("clinics").select("id").eq("id", clinicId).maybeSingle();
+    return !!data;
+  } catch {
+    return false;
+  }
+}
+
 const HELD = "Our front desk has your chat and will reply here shortly.";
 
 export async function POST(req: Request) {
@@ -41,7 +53,7 @@ export async function POST(req: Request) {
 
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return new Response("bad request", { status: 400 });
-  const { slug, visitorId, message } = parsed.data;
+  const { slug, visitorId, message, test } = parsed.data;
   const text = capText(message.parts.map((p) => (p.type === "text" ? (p.text ?? "") : "")).join("\n").trim());
   if (!text) return new Response("empty message", { status: 400 });
 
@@ -51,7 +63,7 @@ export async function POST(req: Request) {
   const sb = db();
   const { data: patient, error } = await sb
     .from("patients")
-    .upsert({ clinic_id: clinic.id, web_visitor_id: visitorId }, { onConflict: "clinic_id,web_visitor_id" })
+    .upsert({ clinic_id: clinic.id, web_visitor_id: visitorId, ...(test && (await isStaffOf(clinic.id)) ? { is_test: true } : {}) }, { onConflict: "clinic_id,web_visitor_id" })
     .select("id, name, phone")
     .single();
   if (error) throw error;

@@ -15,7 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 import type { Hours } from "@/lib/slots";
 import { cn } from "@/lib/utils";
-import { deleteTimeOff, saveBranding, saveClinic, saveDentist, saveService, saveTimeOff, type Clash, type SaveResult } from "./actions";
+import { deleteTimeOff, resetTestChats, saveBranding, saveClinic, saveDentist, saveService, saveTimeOff, type Clash, type SaveResult } from "./actions";
 
 type Svc = { id: string; name: string; name_ar: string | null; minutes: number; price_aed: number | null; active: boolean };
 type Den = { id: string; name: string; name_ar: string | null; title: string | null; color: string; hours: Hours; active: boolean; service_ids: string[] };
@@ -306,9 +306,15 @@ export function WidgetForm({ branding, slug, edit }: { branding: { accent?: stri
       </fieldset>
       <div className="flex items-center gap-2 rounded-lg border p-3 text-sm">
         <span className="rounded-md px-3 py-1.5 font-medium text-white" style={{ background: v.accent || "var(--primary)" }}>Book a visit</span>
-        <Link href={`/chat/${slug}`} target="_blank" className="ms-auto text-muted-foreground underline underline-offset-2 hover:text-foreground">Open the chat</Link>
+        <Link href={`/chat/${slug}?test=1`} target="_blank" className="ms-auto text-muted-foreground underline underline-offset-2 hover:text-foreground">Open the chat (test mode)</Link>
       </div>
       {edit && <div className="flex items-center gap-3"><Button disabled={pending}>{pending ? "Saving…" : "Save widget"}</Button>{status}</div>}
+      {edit && (
+        <div className="grid gap-1 border-t pt-3 text-sm">
+          <p className="text-muted-foreground">Chats opened with test mode are marked as test data. Reset deletes them, with their visits and messages.</p>
+          <Button type="button" variant="outline" className="w-fit" disabled={pending} onClick={() => confirm("Delete all test chats, visits and messages?") && run(() => resetTestChats())}>Reset test chats</Button>
+        </div>
+      )}
     </form>
   );
 }

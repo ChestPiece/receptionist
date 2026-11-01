@@ -1,6 +1,6 @@
 "use client";
 
-import { ActivityIcon, CalendarDaysIcon, ChevronsUpDownIcon, InboxIcon, LayoutListIcon, SettingsIcon, UsersIcon } from "lucide-react";
+import { ActivityIcon, CalendarDaysIcon, ChevronsUpDownIcon, FlaskConicalIcon, InboxIcon, LayoutListIcon, SettingsIcon, UsersIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
@@ -45,6 +45,18 @@ export function Nav({ badges, settings }: { badges?: Record<string, ReactNode>; 
     </SidebarMenu>
   );
 }
+
+// Opens the clinic's own chat in test mode: these chats are marked as test data and kept out of the numbers.
+export const TestSaraLink = ({ slug }: { slug: string }) => (
+  <SidebarMenuItem>
+    <SidebarMenuButton asChild tooltip="Test Sara" className="h-9">
+      <a href={`/chat/${slug}?test=1`} target="_blank" rel="noopener">
+        <FlaskConicalIcon />
+        <span>Test Sara</span>
+      </a>
+    </SidebarMenuButton>
+  </SidebarMenuItem>
+);
 
 export const SettingsLink = () => <NavLink href="/dashboard/settings" label="Settings" icon={SettingsIcon} />;
 

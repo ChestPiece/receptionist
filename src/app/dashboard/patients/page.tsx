@@ -19,10 +19,10 @@ export default async function Patients({ searchParams }: PageProps<"/dashboard/p
   // Commas and brackets would break the PostgREST "or" filter, so they are dropped from the search.
   const term = q.replace(/[,()*%]/g, " ").trim();
 
-  let query = sb.from("patients").select("id, name, phone, wa_id, web_visitor_id, tags, opted_out").eq("clinic_id", clinic.id).order("created_at", { ascending: false }).limit(200);
+  let query = sb.from("patients").select("id, name, phone, wa_id, web_visitor_id, tags, opted_out").eq("clinic_id", clinic.id).eq("is_test", false).order("created_at", { ascending: false }).limit(200);
   if (term) query = query.or(`name.ilike.*${term}*,phone.ilike.*${term}*,wa_id.ilike.*${term}*`);
   if (tag) query = query.contains("tags", [tag]);
-  const [{ data }, { data: tagRows }] = await Promise.all([query, sb.from("patients").select("tags").eq("clinic_id", clinic.id).not("tags", "eq", "{}").limit(500)]);
+  const [{ data }, { data: tagRows }] = await Promise.all([query, sb.from("patients").select("tags").eq("clinic_id", clinic.id).eq("is_test", false).not("tags", "eq", "{}").limit(500)]);
   const rows = (data ?? []) as Row[];
   const tags = [...new Set((tagRows ?? []).flatMap((r) => r.tags as string[]))].sort();
 

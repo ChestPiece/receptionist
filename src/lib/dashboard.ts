@@ -109,12 +109,12 @@ export type Visit = {
   status: string;
   source: string;
   created_at: string;
-  patients: { name: string | null; phone: string | null; wa_id: string | null; conversations: { bot_paused: boolean; updated_at: string } | null } | null;
+  patients: { name: string | null; phone: string | null; wa_id: string | null; is_test?: boolean; conversations: { bot_paused: boolean; updated_at: string } | null } | null;
 };
 
 // ---------------------------------------------------------------- calendar: day = one column per dentist, week = one column per day
 
-export type SBlock = { id: string; column: string; start: number; end: number; title: string; name: string; kind: Kind; muted: boolean; color: string | null };
+export type SBlock = { id: string; column: string; start: number; end: number; title: string; name: string; kind: Kind; muted: boolean; test: boolean; color: string | null };
 export type SCol = { key: string; label: string; sub?: string; today?: boolean; date: string; dentistId?: string };
 export type Off = { column: string; from: number; to: number };
 
@@ -143,7 +143,7 @@ export async function schedule(sb: Sb, clinic: Clinic, q: { view: "day" | "week"
   const endIso = new Date(Date.parse(`${addDays(days.at(-1)!, 1)}T00:00:00Z`) - off * 60_000).toISOString();
   let visits = sb
     .from("appointments")
-    .select("id, service, starts_at, ends_at, status, source, created_at, dentist_id, patient_id, service_id, patients(name, phone, wa_id, conversations(bot_paused, updated_at))")
+    .select("id, service, starts_at, ends_at, status, source, created_at, dentist_id, patient_id, service_id, patients(name, phone, wa_id, is_test, conversations(bot_paused, updated_at))")
     .eq("clinic_id", clinic.id).neq("status", "cancelled").gte("starts_at", startIso).lt("starts_at", endIso).order("starts_at");
   if (q.dentistId) visits = visits.eq("dentist_id", q.dentistId);
   const [{ data }, { data: away }] = await Promise.all([
@@ -163,7 +163,7 @@ export async function schedule(sb: Sb, clinic: Clinic, q: { view: "day" | "week"
     return {
       id: a.id, column: colOf(a), start: hourOf(s, off), end: hourOf(new Date(a.ends_at), off), title: a.service, name: who(a.patients),
       kind: stillPaused(a.patients?.conversations ?? null) ? "staff" : a.patients?.wa_id ? "wa" : "web",
-      muted: a.status === "no_show", color: color(a.dentist_id),
+      muted: a.status === "no_show", test: !!a.patients?.is_test, color: color(a.dentist_id),
     };
   });
 

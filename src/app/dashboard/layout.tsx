@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { stillPaused } from "@/lib/agent";
 import { desk } from "@/lib/dashboard";
 import { signOut } from "./actions";
-import { ClinicSwitcher, CountBadge, Live, Nav, SettingsLink } from "./shell";
+import { ClinicSwitcher, CountBadge, Live, Nav, SettingsLink, TestSaraLink } from "./shell";
 
 // Dashboard is per-user (auth cookies), so it renders on request instead of prerendering.
 export const instant = false;
@@ -28,7 +28,7 @@ export default function DashboardLayout({ children }: LayoutProps<"/dashboard">)
         </SidebarHeader>
         <SidebarContent>
           <SidebarGroup>
-            <Nav badges={{ "/dashboard/inbox": <Suspense fallback={null}><NeedsStaff /></Suspense>, "/dashboard/activity": <Suspense fallback={null}><Warnings /></Suspense> }} settings={<Suspense fallback={null}><Settings /></Suspense>} />
+            <Nav badges={{ "/dashboard/inbox": <Suspense fallback={null}><NeedsStaff /></Suspense>, "/dashboard/activity": <Suspense fallback={null}><Warnings /></Suspense> }} settings={<><Suspense fallback={null}><TestSara /></Suspense><Suspense fallback={null}><Settings /></Suspense></>} />
           </SidebarGroup>
         </SidebarContent>
         <SidebarFooter>
@@ -61,10 +61,17 @@ async function Settings() {
   return clinic?.role === "owner" ? <SettingsLink /> : null;
 }
 
+async function TestSara() {
+  const { sb, clinic } = await desk();
+  if (!clinic) return null;
+  const { data } = await sb.from("clinics").select("slug").eq("id", clinic.id).single();
+  return data?.slug ? <TestSaraLink slug={data.slug} /> : null;
+}
+
 async function NeedsStaff() {
   const { sb, clinic } = await desk();
   if (!clinic) return null;
-  const { data: convos } = await sb.from("conversations").select("bot_paused, updated_at, patients!inner(clinic_id)").eq("patients.clinic_id", clinic.id).eq("bot_paused", true);
+  const { data: convos } = await sb.from("conversations").select("bot_paused, updated_at, patients!inner(clinic_id, is_test)").eq("patients.clinic_id", clinic.id).eq("patients.is_test", false).eq("bot_paused", true);
   return <CountBadge count={(convos ?? []).filter((c) => stillPaused(c)).length} />;
 }
 

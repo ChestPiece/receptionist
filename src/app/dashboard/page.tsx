@@ -26,11 +26,11 @@ export default async function Today() {
   const dayEnd = new Date(Date.parse(utc(today)) + 86_400_000).toISOString();
 
   const [{ data: visits }, { data: week }, { data: paused }] = await Promise.all([
-    sb.from("appointments").select("id, service, starts_at, status, source, created_at, dentist_id, patient_id, patients(name, phone, wa_id)")
-      .eq("clinic_id", clinic.id).neq("status", "cancelled").gte("starts_at", utc(today)).lt("starts_at", dayEnd).order("starts_at"),
-    sb.from("appointments").select("source, status, created_at, starts_at").eq("clinic_id", clinic.id).or(`created_at.gte.${weekFrom},starts_at.gte.${weekFrom}`),
-    sb.from("conversations").select("patient_id, bot_paused, updated_at, patients!inner(clinic_id, name, phone, wa_id)")
-      .eq("patients.clinic_id", clinic.id).eq("bot_paused", true).order("updated_at", { ascending: false }),
+    sb.from("appointments").select("id, service, starts_at, status, source, created_at, dentist_id, patient_id, patients!inner(name, phone, wa_id, is_test)")
+      .eq("patients.is_test", false).eq("clinic_id", clinic.id).neq("status", "cancelled").gte("starts_at", utc(today)).lt("starts_at", dayEnd).order("starts_at"),
+    sb.from("appointments").select("source, status, created_at, starts_at, patients!inner(is_test)").eq("patients.is_test", false).eq("clinic_id", clinic.id).or(`created_at.gte.${weekFrom},starts_at.gte.${weekFrom}`),
+    sb.from("conversations").select("patient_id, bot_paused, updated_at, patients!inner(clinic_id, name, phone, wa_id, is_test)")
+      .eq("patients.clinic_id", clinic.id).eq("patients.is_test", false).eq("bot_paused", true).order("updated_at", { ascending: false }),
   ]);
 
   const rows = (visits ?? []) as unknown as Row[];
