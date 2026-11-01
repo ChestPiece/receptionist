@@ -1,7 +1,7 @@
 // Booking engine: a pure core (who can take a service, when they are free) and a thin DB layer over it. No imports from sara/jobs.
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Clinic, Dentist } from "./clinics";
-import { DAYS, freeSlots, localDate, toUtc } from "./slots";
+import { DAYS, freeSlots, localDate, toUtc, type Hours } from "./slots";
 
 export const HORIZON_DAYS = 60;
 export type Busy = { dentistId: string; start: Date; end: Date };
@@ -161,3 +161,7 @@ export async function clashes(sb: SupabaseClient, c: Clinic, dentistId: string) 
     .filter((a) => !d.active || !inHours(a) || inOff(a))
     .map((a) => ({ id: a.id as string, starts_at: a.starts_at as string, service: a.service as string, patient: (a.patients as unknown as { name: string | null } | null)?.name ?? null }));
 }
+
+// Settings guard: every dentist window sits inside one clinic opening window on the same day.
+export const hoursInside = (inner: Hours, outer: Hours) =>
+  DAYS.every((d) => (inner[d] ?? []).every(([a, b]) => (outer[d] ?? []).some(([oa, ob]) => oa <= a && b <= ob)));

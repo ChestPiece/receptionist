@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { bookingSource, dentistsFor, freeByDentist, pickDentist, tooFar } from "./booking";
+import { bookingSource, dentistsFor, freeByDentist, hoursInside, pickDentist, tooFar } from "./booking";
 import type { Dentist } from "./clinics";
 import { toUtc, type Hours } from "./slots";
 
@@ -45,4 +45,10 @@ test("tooFar and bookingSource live here", () => {
   expect(tooFar("2026-12-22", "2026-10-22")).toBe(true);
   expect(bookingSource("2026-10-21T12:00:00Z", new Date("2026-10-22T12:00:00Z"))).toBe("followup");
   expect(bookingSource(null, now)).toBe("chat");
+});
+
+test("hoursInside: dentist windows must sit inside opening hours", () => {
+  expect(hoursInside({ sat: [["10:00", "12:00"]] }, { sat: [["09:00", "13:00"]] })).toBe(true);
+  expect(hoursInside({ fri: [["09:00", "10:00"]] }, { fri: [["16:00", "21:00"]] })).toBe(false);
+  expect(hoursInside({ mon: [["10:00", "11:00"]] }, { sat: [["09:00", "13:00"]] })).toBe(false);
 });
