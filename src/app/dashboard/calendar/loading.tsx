@@ -1,15 +1,13 @@
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageBody, PageHeader } from "../page-frame";
 
 export default function Loading() {
   return (
     <>
-      <header className="flex flex-wrap items-end justify-between gap-4 border-b py-8">
-        <h1 className="text-3xl font-semibold tracking-[-0.03em]">Calendar</h1>
-        <Skeleton className="h-4 w-28" />
-      </header>
-      <div className="grid gap-6 py-6">
-        <Skeleton className="h-[600px]" />
-      </div>
+      <PageHeader title="Calendar" />
+      <PageBody className="p-3 sm:p-4">
+        <Skeleton className="min-h-0 flex-1" />
+      </PageBody>
     </>
   );
 }

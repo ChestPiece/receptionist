@@ -2,8 +2,10 @@ import Link from "next/link";
 import { Line, Typed } from "@/components/ledger";
 import { stillPaused } from "@/lib/agent";
 import { desk, who } from "@/lib/dashboard";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { localTime } from "@/lib/slots";
 import { cn } from "@/lib/utils";
+import { PageBody, PageHeader } from "../page-frame";
 import { ReplyBox } from "./reply-box";
 import { setPaused } from "../actions";
 
@@ -40,16 +42,16 @@ export default async function Inbox({ searchParams }: PageProps<"/dashboard/inbo
 
   return (
     <>
-      <header className="flex flex-wrap items-end justify-between gap-4 border-b py-8">
-        <h1 className="text-3xl font-semibold tracking-[-0.03em]">Inbox</h1>
+      <PageHeader title="Inbox">
         <div className="flex gap-1 text-sm" role="group" aria-label="Filter">
           <Link href={href({ f: undefined, p: open })} aria-current={f !== "staff" ? "true" : undefined} className={cn("rounded-full px-3 py-1.5 text-muted-foreground", f !== "staff" && "bg-foreground text-background")}>All</Link>
           <Link href={href({ f: "staff", p: undefined })} aria-current={f === "staff" ? "true" : undefined} className={cn("rounded-full px-3 py-1.5 text-muted-foreground", f === "staff" && "bg-alert text-white")}>Needs staff · {waiting.size}</Link>
         </div>
-      </header>
+      </PageHeader>
 
-      <div className="grid grid-cols-1 gap-6 py-6 lg:grid-cols-[320px_1fr]">
-        <ul className={cn("slip divide-y overflow-hidden lg:max-h-[calc(100dvh-180px)] lg:overflow-y-auto", open && p && "max-lg:hidden")}>
+      <PageBody className="grid grid-cols-1 grid-rows-[minmax(0,1fr)] gap-3 p-3 sm:p-4 lg:grid-cols-[320px_1fr]">
+        <ScrollArea className={cn("slip min-h-0", open && p && "max-lg:hidden")}>
+        <ul className="divide-y">
           {list.length === 0 && <li className="p-5 text-sm text-muted-foreground">{f === "staff" ? "Nobody is waiting for staff." : "No chats yet."}</li>}
           {list.map((id) => {
             const m = latest.get(id)!;
@@ -57,7 +59,7 @@ export default async function Inbox({ searchParams }: PageProps<"/dashboard/inbo
               <li key={id}>
                 <Link href={href({ p: id })} aria-current={id === open ? "true" : undefined} className={cn("grid gap-1 px-4 py-3 transition-colors hover:bg-rule/60", id === open && "bg-rule/80")}>
                   <span className="flex items-center gap-2">
-                    <span className="truncate font-serif text-[17px]">{who(person.get(id) ?? null)}</span>
+                    <span className="truncate text-sm font-medium">{who(person.get(id) ?? null)}</span>
                     <span className="ms-auto font-mono text-[11px] text-muted-foreground tabular-nums">{time(m.created_at)}</span>
                   </span>
                   <span className="flex items-center gap-2">
@@ -70,14 +72,15 @@ export default async function Inbox({ searchParams }: PageProps<"/dashboard/inbo
             );
           })}
         </ul>
+        </ScrollArea>
 
         {open && current ? (
-          <section className={cn("slip torn-top relative flex min-h-[520px] flex-col lg:h-[calc(100dvh-180px)]", !p && "max-lg:hidden")}>
-            <header className="flex flex-wrap items-center justify-between gap-3 border-b border-dashed px-5 pt-5 pb-3">
+          <section className={cn("slip relative flex min-h-0 flex-col", !p && "max-lg:hidden")}>
+            <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
               <div>
                 <Link href={href({ p: undefined })} className="label lg:hidden">← All chats</Link>
                 <span className="label block max-lg:hidden">{current.wa_id ? `WhatsApp · +${current.wa_id.replace(/@.*/, "")}` : `Website${current.phone ? ` · ${current.phone}` : ""}`}</span>
-                <h2 className="font-serif text-[22px]">
+                <h2 className="text-base font-semibold">
                   <Link href={`/dashboard/patients/${current.id}`} className="hover:underline">{who(current)}</Link>
                 </h2>
               </div>
@@ -89,7 +92,7 @@ export default async function Inbox({ searchParams }: PageProps<"/dashboard/inbo
                 </form>
               )}
             </header>
-            <div aria-live="polite" className="flex flex-1 flex-col-reverse overflow-y-auto px-5 py-4">
+            <div aria-live="polite" className="flex min-h-0 flex-1 flex-col-reverse overflow-y-auto px-4 py-3">
               <div className="flex flex-col gap-3">
                 {lines.map((m, i) => (
                   <Line key={m.id} role={m.role} who={SPEAKER[m.role]}>
@@ -98,7 +101,7 @@ export default async function Inbox({ searchParams }: PageProps<"/dashboard/inbo
                 ))}
               </div>
             </div>
-            <footer className="border-t border-dashed px-5 py-3">
+            <footer className="shrink-0 border-t px-4 py-3">
               {current.wa_id ? (
                 <ReplyBox patientId={current.id} paused={isPaused} />
               ) : (
@@ -109,7 +112,7 @@ export default async function Inbox({ searchParams }: PageProps<"/dashboard/inbo
             </footer>
           </section>
         ) : null}
-      </div>
+      </PageBody>
     </>
   );
 }

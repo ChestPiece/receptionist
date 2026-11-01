@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { desk, who } from "@/lib/dashboard";
+import { PageBody, PageHeader } from "../page-frame";
 
 export const metadata = { title: "Patients" };
 
@@ -21,21 +22,21 @@ export default async function Patients({ searchParams }: PageProps<"/dashboard/p
 
   return (
     <>
-      <header className="flex flex-wrap items-end justify-between gap-4 border-b py-8">
-        <h1 className="text-3xl font-semibold tracking-[-0.03em]">Patients</h1>
+      <PageHeader title="Patients">
         <form className="flex gap-2" role="search">
           {tag && <input type="hidden" name="tag" value={tag} />}
           <label htmlFor="q" className="sr-only">Search patients</label>
-          <input id="q" name="q" defaultValue={q} placeholder="Name or phone" className="h-10 w-56 rounded-[4px] border bg-card px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" />
-          <button className="h-10 rounded-full bg-foreground px-4 text-[13px] font-medium text-background">Search</button>
+          <input id="q" name="q" defaultValue={q} placeholder="Name or phone" className="h-9 w-40 rounded-md border bg-card px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring sm:w-56" />
+          <button className="h-9 rounded-full bg-primary px-4 text-[13px] font-medium text-primary-foreground">Search</button>
         </form>
-      </header>
+      </PageHeader>
+      <PageBody className="overflow-y-auto p-3 sm:p-4">
       {tag && (
-        <p className="pt-4 text-sm">
+        <p className="pb-3 text-sm">
           Tagged <span className="font-mono">{tag}</span> · <Link href={`?q=${encodeURIComponent(q)}`} className="text-muted-foreground underline">clear</Link>
         </p>
       )}
-      <div className="slip mt-6 overflow-x-auto">
+      <div className="slip overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b text-start">
@@ -45,7 +46,7 @@ export default async function Patients({ searchParams }: PageProps<"/dashboard/p
               <th className="label px-4 py-3 text-start max-md:hidden">Since</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-dashed">
+          <tbody className="divide-y">
             {rows.length === 0 && (
               <tr>
                 <td colSpan={4} className="px-4 py-6 text-muted-foreground">{term || tag ? "No patient matches." : "No patients yet."}</td>
@@ -54,7 +55,7 @@ export default async function Patients({ searchParams }: PageProps<"/dashboard/p
             {rows.map((r) => (
               <tr key={r.id} className="transition-colors hover:bg-rule/60">
                 <td className="px-4 py-3">
-                  <Link href={`/dashboard/patients/${r.id}`} className="font-serif text-base hover:underline">{who(r)}</Link>
+                  <Link href={`/dashboard/patients/${r.id}`} className="font-medium hover:underline">{who(r)}</Link>
                   {r.opted_out && <span className="ms-2 text-xs text-muted-foreground">opted out</span>}
                 </td>
                 <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
@@ -74,6 +75,7 @@ export default async function Patients({ searchParams }: PageProps<"/dashboard/p
           </tbody>
         </table>
       </div>
+      </PageBody>
     </>
   );
 }

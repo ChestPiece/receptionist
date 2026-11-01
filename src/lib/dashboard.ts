@@ -3,10 +3,11 @@ import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { stillPaused } from "./agent";
+import { roleOf, type Role } from "./role";
 import { supabaseServer } from "./supabase/server";
 import { DAYS, localDate, localTime, type Hours } from "./slots";
 
-export type DeskClinic = { id: string; name: string; hours: Hours; utc_offset_minutes: number; phone: string | null; staff_whatsapp: string | null };
+export type DeskClinic = { id: string; name: string; hours: Hours; utc_offset_minutes: number; phone: string | null; staff_whatsapp: string | null; role: Role };
 export const CLINIC_COOKIE = "desk_clinic";
 
 // RLS returns only clinics the user belongs to (every clinic for platform admins). Cached per request.
@@ -14,8 +15,11 @@ export const desk = cache(async () => {
   const sb = await supabaseServer();
   const { data: claims } = await sb.auth.getClaims();
   if (!claims?.claims) redirect("/login");
-  const { data } = await sb.from("clinics").select("id, name, hours, utc_offset_minutes, phone, staff_whatsapp").order("name");
-  const clinics = (data ?? []) as DeskClinic[];
+  const [{ data }, { data: mine }] = await Promise.all([
+    sb.from("clinics").select("id, name, hours, utc_offset_minutes, phone, staff_whatsapp").order("name"),
+    sb.from("memberships").select("clinic_id, role"),
+  ]);
+  const clinics = (data ?? []).map((c) => ({ ...c, role: roleOf(mine ?? [], c.id) })) as DeskClinic[];
   const picked = (await cookies()).get(CLINIC_COOKIE)?.value;
   const clinic = clinics.find((c) => c.id === picked) ?? clinics[0] ?? null;
   return { sb, clinics, clinic, email: (claims.claims.email as string | undefined) ?? "" };

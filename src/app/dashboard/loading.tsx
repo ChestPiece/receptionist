@@ -1,19 +1,17 @@
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageBody, PageHeader } from "./page-frame";
 
 export default function Loading() {
   return (
     <>
-      <section className="grid gap-4 border-b py-8 lg:grid-cols-[1fr_auto] lg:items-end">
-        <h1 className="text-3xl font-semibold tracking-[-0.03em]">This week</h1>
-        <Skeleton className="h-4 w-56" />
-      </section>
-      <div className="flex flex-wrap gap-x-8 gap-y-3 border-b py-4">
-        {[0, 1, 2].map((i) => <Skeleton key={i} className="h-12 w-40" />)}
-      </div>
-      <div className="grid grid-cols-1 gap-7 py-8 xl:grid-cols-[340px_1fr]">
-        <Skeleton className="h-[320px]" />
-        <Skeleton className="h-[600px]" />
-      </div>
+      <PageHeader title="Today" />
+      <PageBody className="p-3 sm:p-4">
+        <div className="flex gap-8 pb-3">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-10 w-36" />)}</div>
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[340px_1fr]">
+          <Skeleton className="max-xl:h-80" />
+          <Skeleton className="max-xl:h-[34rem]" />
+        </div>
+      </PageBody>
     </>
   );
 }

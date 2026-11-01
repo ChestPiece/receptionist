@@ -2,9 +2,11 @@
 
 Locked 2026-10-25 (supersedes "The Ledger"). Applies to every surface: landing, patient chat, dashboard, login. Change only when Anas asks.
 
+**Palette changed 2026-11-01 (asked by Anas): the app tokens are warm cream + sage (Capacities / Alma references), replacing the stone greys. Landing `--night*` / `--dawn*` are untouched.**
+
 ## Direction contract
-- Calm, credible product for clinic owners. Neutral stone surfaces, one sage accent, plain sans type. The AI stays quiet: no sparkle icons, no gradients, no "AI" cues.
-- Light and dark. System default plus a toggle (next-themes, `.dark` class).
+- Calm, credible product for clinic owners. Warm cream surfaces, one sage accent, plain sans type. The AI stays quiet: no sparkle icons, no gradients, no "AI" cues.
+- Light by default (next-themes, no system following) plus a dark toggle (`.dark` class).
 
 ## Logo
 - The logo is the wordmark `Receptionist Agent.`: Newsreader 400, tracking -0.02em, ink colour, with the full stop in `--alert` red.
@@ -15,14 +17,19 @@ Locked 2026-10-25 (supersedes "The Ledger"). Applies to every surface: landing, 
 ## Color contract (tokens in `src/app/globals.css`)
 | Role | Token | Light | Dark |
 |---|---|---|---|
-| Page | `--background` | #fafaf9 | #0c0a09 |
-| Card | `--card` | #ffffff | #171412 |
-| Ink | `--foreground` | #0c0a09 | #f5f5f4 |
-| Muted text | `--muted-foreground` | #6b6560 | #a8a29e |
-| Border | `--border` | #e7e5e4 | #292524 |
+| Page | `--background` | #f7f3ea | #14130f |
+| Card, popover | `--card` | #fffdf8 | #1c1a15 |
+| Sidebar | `--sidebar` | #f1ebde | #100f0b |
+| Quiet fill | `--muted`, `--secondary`, `--panel` | #efe9dc | #26231c |
+| Ink | `--foreground` | #1c1a15 | #f1ede3 |
+| Muted text | `--muted-foreground` | #6a6254 | #aaa293 |
+| Border | `--border`, `--input` | #e3dbc9 | #302c23 |
+| Hairline | `--rule` | #ece6d8 | #26231c |
 | Sage: primary, WhatsApp, user bubbles | `--primary` | #4f6f5c | #93b59d |
 | Blue: website channel | `--web` | #33506e | #93aecb |
 | Red: needs staff, logo dot | `--alert` | #ad4320 | #e8825f |
+
+Contrast (light): ink on page 15.7, muted on page 5.4, muted on quiet fill 5.0, white on sage 5.6, sage on page 5.0, alert on page 5.3, web on page 7.5. Dark: muted on page 7.4, sage on card 7.7, alert on page 6.9. Borders are decoration (1.2), never carry meaning alone.
 
 - Sage is the only accent on marketing surfaces. Blue and red carry meaning (channel, needs staff) and appear in the dashboard and the logo dot only.
 - No hard-coded hex in components. Add a token first.
@@ -43,6 +50,14 @@ Locked 2026-10-25 (supersedes "The Ledger"). Applies to every surface: landing, 
 - Chat: left collapsible sidebar (logo, Back to site, New chat, clinic card, `<details>` info blocks, theme toggle); a left sheet on phones. Assistant replies are plain text, patient replies are sage bubbles.
 - Motion (relaxed 2026-10-26): UI feedback stays 150-250 ms ease-out. GSAP (`src/lib/gsap.ts`, ScrollTrigger + Flip + SplitText) is allowed on marketing pages: one pinned scroll story per page, scroll reveals, a hero line reveal; scroll-linked moves up to 900 ms, eases `power3`/`expo`, no bounce. Reduced motion: no pin, final state shown. Dashboard: no GSAP.
 - Fluid scale: `text-display`, `text-h2`, `text-lead`, `py-section` (clamp tokens in `globals.css`). Hero fits the first viewport.
+
+## Dashboard layout rules (2026-11-01)
+- **Fixed-height app shell.** `SidebarProvider` is `h-dvh overflow-hidden`; `SidebarInset` is `flex min-h-0 flex-col`. The document never scrolls: `scrollHeight <= innerHeight` on every route at 1366x768, 1440x900, 768x1024 and 375x812.
+- **Page frame** (`src/app/dashboard/page-frame.tsx`): `PageHeader` (56px, sidebar trigger + title + actions) over `PageBody` (`flex min-h-0 flex-1`). Only inner panes scroll (`ScrollArea`, `overflow-y-auto`, the calendar grid with sticky day headers).
+- **No height guesses.** Never `calc(100dvh - …)`, `h-screen` or fixed pixel heights for a pane. Panes get height from flex (`min-h-0 flex-1`) or a grid row `minmax(0,1fr)`; on phones a pane may take a rem height inside a scrolling body.
+- Sidebar: `collapsible="icon"` on desktop, a sheet on phones. Nav Today / Inbox (needs-staff badge) / Calendar / Patients / Settings (owner only). Clinic switcher in the header, user + theme toggle in the footer.
+- **Density.** Compact: page title `text-base font-semibold` in the header (no big H1 banner), 12-16px pane padding (`p-3 sm:p-4`), rows 36-44px, controls `h-9`, body text `text-sm`. Cards are cream `--card` with a hairline border and at most `shadow-sm`; no dashed rules, no serif headings in the app.
+- Active nav item is a card chip (cream + hairline ring); primary buttons are sage, never ink-black.
 
 ## Banned
 Paper/dot textures, torn edges, gradient blobs, glassmorphism beyond the navbar blur, emoji in UI, icon-in-a-square logos, invented stats or client logos.

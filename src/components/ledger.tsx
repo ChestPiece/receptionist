@@ -23,16 +23,16 @@ const KIND = {
 
 // Week grid: one column per day, 52px per hour. Blocks drop in like cards pinned to a board.
 // `extra(day)` renders more content inside a day column (the landing story's flying booking).
-export function WeekCalendar({ title, days, blocks, from = 9, to = 20, now, aside, extra }: { title: ReactNode; days: Day[]; blocks: Block[]; from?: number; to?: number; now?: { day: number; hour: number }; aside?: ReactNode; extra?: (day: number) => ReactNode }) {
+export function WeekCalendar({ title, days, blocks, from = 9, to = 20, now, aside, extra, fill }: { title: ReactNode; days: Day[]; blocks: Block[]; from?: number; to?: number; now?: { day: number; hour: number }; aside?: ReactNode; extra?: (day: number) => ReactNode; fill?: boolean }) {
   const reduce = useReducedMotion();
   const hours = Array.from({ length: to - from }, (_, i) => from + i);
   // Mobile shows three days from today (or the first day).
   const first = Math.max(0, Math.min(days.findIndex((d) => d.today), days.length - 3));
   const hide = (i: number) => (i < first || i >= first + 3 ? "max-md:hidden" : "");
   return (
-    <section className="slip overflow-hidden">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4">
-        <h3 className="font-serif text-[22px]">{title}</h3>
+    <section className={cn("slip overflow-hidden", fill && "flex h-full min-h-0 flex-col")}>
+      <header className={cn("flex shrink-0 flex-wrap items-center justify-between gap-3 border-b px-5 py-4", fill && "gap-y-1 px-4 py-2.5")}>
+        <h3 className={cn("font-serif text-[22px]", fill && "font-sans text-sm font-semibold")}>{title}</h3>
         <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
           <Legend className="bg-primary">WhatsApp</Legend>
           <Legend className="bg-web">Website</Legend>
@@ -40,10 +40,11 @@ export function WeekCalendar({ title, days, blocks, from = 9, to = 20, now, asid
           {aside}
         </div>
       </header>
+      <div className={cn(fill && "min-h-0 flex-1 overflow-auto")}>
       <div className="relative grid grid-cols-[52px_repeat(var(--m),minmax(0,1fr))] md:grid-cols-[52px_repeat(var(--n),minmax(0,1fr))]" style={{ "--n": days.length, "--m": Math.min(3, days.length) } as React.CSSProperties}>
-        <div className="border-b" />
+        <div className={cn("border-b", fill && "sticky top-0 z-20 bg-card")} />
         {days.map((d, i) => (
-          <div key={i} className={cn("border-b border-s border-s-rule px-2 py-2.5 text-xs font-medium", hide(i))}>
+          <div key={i} className={cn("border-b border-s border-s-rule px-2 py-2.5 text-xs font-medium", fill && "sticky top-0 z-20 bg-card", hide(i))}>
             {d.label}
             <span className={cn("block font-serif text-[22px] leading-tight tracking-tight tabular-nums", d.today && "text-alert")}>{d.date}</span>
           </div>
@@ -88,6 +89,7 @@ export function WeekCalendar({ title, days, blocks, from = 9, to = 20, now, asid
             <span className="absolute -top-1 -start-1.5 size-2.5 rounded-full bg-alert" />
           </div>
         )}
+      </div>
       </div>
     </section>
   );

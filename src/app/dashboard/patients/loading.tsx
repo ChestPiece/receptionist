@@ -1,15 +1,15 @@
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageBody, PageHeader } from "../page-frame";
 
 export default function Loading() {
   return (
     <>
-      <header className="flex flex-wrap items-end justify-between gap-4 border-b py-8">
-        <h1 className="text-3xl font-semibold tracking-[-0.03em]">Patients</h1>
-        <Skeleton className="h-10 w-72" />
-      </header>
-      <div className="slip mt-6 grid gap-3 p-4">
-        {Array.from({ length: 8 }, (_, i) => <Skeleton key={i} className="h-8" />)}
-      </div>
+      <PageHeader title="Patients" />
+      <PageBody className="p-3 sm:p-4">
+        <div className="slip grid content-start gap-3 p-4">
+          {Array.from({ length: 8 }, (_, i) => <Skeleton key={i} className="h-8" />)}
+        </div>
+      </PageBody>
     </>
   );
 }

@@ -3,6 +3,7 @@ import { Line, Tally, Typed, WeekCalendar } from "@/components/ledger";
 import { stillPaused } from "@/lib/agent";
 import { afterHours, desk, week, weekStart, who } from "@/lib/dashboard";
 import { localDate } from "@/lib/slots";
+import { PageBody, PageHeader } from "./page-frame";
 
 export const metadata = { title: "Today" };
 
@@ -35,49 +36,49 @@ export default async function Today() {
 
   return (
     <>
-      <section className="grid gap-4 border-b py-8 lg:grid-cols-[1fr_auto] lg:items-end">
-        <h1 className="text-3xl font-semibold tracking-[-0.03em]">
-          This week
-        </h1>
-        <p className="label">{clinic.name} · Week of {LONG.format(new Date(`${start}T00:00:00Z`))}</p>
-      </section>
-      <div className="flex flex-wrap gap-x-8 gap-y-3 border-b py-4">
-        <Tally value={bySara.length} label="Booked by Sara this week" />
-        <Tally value={late.length} label="After hours" />
-        <Tally value={waiting.length} label="Need staff" />
-      </div>
-
-      <div className="grid grid-cols-1 gap-7 py-8 xl:grid-cols-[340px_1fr]">
-        <section className={`slip torn-top relative flex flex-col ${first ? "xl:h-[600px]" : "xl:self-start"}`}>
-          {first ? (
-            <>
-              <header className="border-b border-dashed px-5 pt-5 pb-3">
-                <span className="label">{first.patients.wa_id ? "WhatsApp" : "Website"} · waiting for staff</span>
-                <h2 className="font-serif text-[22px]">{who(first.patients)}</h2>
-              </header>
-              <div className="flex flex-1 flex-col justify-end gap-3 overflow-hidden px-5 py-4">
-                {(thread ?? []).reverse().map((m, i, all) => (
-                  <Line key={m.id} role={m.role} who={m.role === "assistant" ? "Sara" : m.role === "patient" ? "Patient" : m.role === "staff" ? "Staff" : "Note"}>
-                    {m.role === "assistant" && i === all.length - 1 ? <Typed text={m.body} at={m.created_at} /> : m.body}
-                  </Line>
-                ))}
+      <PageHeader title="Today">
+        <p className="text-xs text-muted-foreground max-sm:hidden">{clinic.name} · Week of {LONG.format(new Date(`${start}T00:00:00Z`))}</p>
+      </PageHeader>
+      <PageBody className="overflow-y-auto p-3 sm:p-4 xl:overflow-hidden">
+        <div className="flex shrink-0 flex-wrap gap-x-8 gap-y-2 pb-3">
+          <Tally value={bySara.length} label="Booked by Sara this week" />
+          <Tally value={late.length} label="After hours" />
+          <Tally value={waiting.length} label="Need staff" />
+        </div>
+        <div className="grid min-h-0 grid-cols-1 gap-4 xl:flex-1 xl:grid-cols-[340px_1fr]">
+          <section className="slip relative flex min-h-0 flex-col max-xl:h-80">
+            {first ? (
+              <>
+                <header className="shrink-0 border-b px-4 py-3">
+                  <span className="label">{first.patients.wa_id ? "WhatsApp" : "Website"} · waiting for staff</span>
+                  <h2 className="text-base font-semibold">{who(first.patients)}</h2>
+                </header>
+                <div className="flex min-h-0 flex-1 flex-col justify-end gap-3 overflow-hidden px-4 py-3">
+                  {(thread ?? []).reverse().map((m, i, all) => (
+                    <Line key={m.id} role={m.role} who={m.role === "assistant" ? "Sara" : m.role === "patient" ? "Patient" : m.role === "staff" ? "Staff" : "Note"}>
+                      {m.role === "assistant" && i === all.length - 1 ? <Typed text={m.body} at={m.created_at} /> : m.body}
+                    </Line>
+                  ))}
+                </div>
+                <footer className="flex shrink-0 items-center justify-between border-t px-4 py-3">
+                  <span className="label">{waiting.length > 1 ? `${waiting.length - 1} more waiting` : "Only one waiting"}</span>
+                  <Link href={`/dashboard/inbox?p=${first.patient_id}`} className="rounded-full bg-primary px-4 py-2 text-[13px] font-medium text-primary-foreground">
+                    Open chat
+                  </Link>
+                </footer>
+              </>
+            ) : (
+              <div className="flex flex-1 flex-col justify-center p-6">
+                <h2 className="text-base font-semibold">Nobody waiting.</h2>
+                <p className="mt-1 text-sm text-muted-foreground">When Sara hands a chat to your team, it shows up here and turns red on the book.</p>
               </div>
-              <footer className="flex items-center justify-between border-t border-dashed px-5 py-3">
-                <span className="label">{waiting.length > 1 ? `${waiting.length - 1} more waiting` : "Only one waiting"}</span>
-                <Link href={`/dashboard/inbox?p=${first.patient_id}`} className="rounded-full bg-foreground px-4 py-2 text-[13px] font-medium text-background">
-                  Open chat
-                </Link>
-              </footer>
-            </>
-          ) : (
-            <div className="flex flex-1 flex-col justify-center p-6">
-              <h2 className="font-serif text-[22px]">Nobody waiting.</h2>
-              <p className="mt-1 text-sm text-muted-foreground">When Sara hands a chat to your team, it shows up here and turns red on the book.</p>
-            </div>
-          )}
-        </section>
-        <WeekCalendar title={`Week of ${LONG.format(new Date(`${start}T00:00:00Z`))}`} days={cal.days} blocks={cal.blocks} from={cal.from} to={cal.to} now={cal.now} />
-      </div>
+            )}
+          </section>
+          <div className="min-h-0 max-xl:h-[34rem]">
+            <WeekCalendar fill title={`Week of ${LONG.format(new Date(`${start}T00:00:00Z`))}`} days={cal.days} blocks={cal.blocks} from={cal.from} to={cal.to} now={cal.now} />
+          </div>
+        </div>
+      </PageBody>
     </>
   );
 }
