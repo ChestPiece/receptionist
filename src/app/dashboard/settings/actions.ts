@@ -28,6 +28,8 @@ export async function saveClinic(v: { name: string; phone: string; address: stri
   if ("error" in o) return o;
   if (!v.name.trim()) return { error: "The clinic needs a name." };
   if (!validHours(v.hours)) return { error: "Each opening window needs a start before its end." };
+  const outside = (await deskConfig(o.sb, o.clinicId)).dentists.filter((d) => d.active && !hoursInside(d.hours, v.hours));
+  if (outside.length) return { error: `Shorten these dentists' hours first, they work outside the new opening hours: ${outside.map((d) => d.name).join(", ")}.` };
   const { error } = await o.sb.from("clinics").update({
     name: v.name.trim(), phone: v.phone.trim() || null, address: v.address.trim() || null, maps_url: v.maps_url.trim() || null,
     hours: v.hours, insurers: v.insurers.map((s) => s.trim()).filter(Boolean), faq: v.faq.filter((f) => f.q.trim() && f.a.trim()),
@@ -37,13 +39,16 @@ export async function saveClinic(v: { name: string; phone: string; address: stri
   return {};
 }
 
-// Replace who offers a service / what a dentist offers in one go.
+// Replace who offers a service / what a dentist offers: add the new pairs first, then drop the rest, so a failed write never leaves a service with nobody.
 async function relink(sb: Awaited<ReturnType<typeof desk>>["sb"], clinicId: string, by: "service_id" | "dentist_id", id: string, pairs: { dentist_id: string; service_id: string }[]) {
-  const del = await sb.from("dentist_services").delete().eq(by, id);
-  if (del.error) return false;
-  if (!pairs.length) return true;
-  const ins = await sb.from("dentist_services").insert(pairs.map((p) => ({ clinic_id: clinicId, ...p })));
-  return !ins.error;
+  if (pairs.length) {
+    const ins = await sb.from("dentist_services").upsert(pairs.map((p) => ({ clinic_id: clinicId, ...p })), { onConflict: "dentist_id,service_id", ignoreDuplicates: true });
+    if (ins.error) return false;
+  }
+  const other = by === "service_id" ? "dentist_id" : "service_id";
+  let del = sb.from("dentist_services").delete().eq(by, id);
+  if (pairs.length) del = del.not(other, "in", `(${pairs.map((p) => p[other]).join(",")})`);
+  return !(await del).error;
 }
 
 export async function saveService(v: { id?: string; name: string; name_ar: string; minutes: number; price_aed: number | null; active: boolean; dentistIds: string[] }): Promise<SaveResult> {

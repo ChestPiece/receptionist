@@ -122,12 +122,13 @@ export async function GET(req: Request) {
     .select("id, role, body, created_at")
     .eq("patient_id", patient.id)
     .in("role", ["patient", "assistant", "staff"])
-    .order("id", { ascending: false }) // one save writes patient + reply in the same instant, so order by id
+    .order("id", { ascending: !!after }) // one save writes patient + reply in the same instant, so order by id; polls read oldest-new first so none are skipped
     .limit(30);
   if (after) query = query.gt("id", after);
-  const { data } = await query;
+  const { data: rows } = await query;
+  const data = after ? rows : rows?.reverse();
   return Response.json({
     paused: stillPaused(convo),
-    messages: (data ?? []).reverse().map((m) => ({ id: String(m.id), role: m.role, text: m.body, at: m.created_at })),
+    messages: (data ?? []).map((m) => ({ id: String(m.id), role: m.role, text: m.body, at: m.created_at })),
   });
 }

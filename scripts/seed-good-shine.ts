@@ -12,7 +12,7 @@ const SLUG = "good-shine";
 const OFF = 240; // UTC+4
 const sb = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false } });
 const fail = (msg: string): never => { console.error(msg); process.exit(1); };
-const must = <T>({ data, error }: { data: T | null; error: { message: string } | null }, what: string): T => (error || data === null ? fail(`${what}: ${error?.message}`) : data);
+const must = <T>({ data, error }: { data: T; error: { message: string } | null }, what: string): NonNullable<T> => (error || data == null ? fail(`${what}: ${error?.message}`) : (data as NonNullable<T>));
 
 // Deterministic randomness, so every re-seed looks the same.
 let seed = 7;
@@ -89,7 +89,8 @@ const PEOPLE: [string, Ch, string[]][] = [
 ];
 
 // ---- Wipe the old copy (this clinic only) ----
-const old = must(await sb.from("clinics").select("id").eq("slug", SLUG).maybeSingle(), "find clinic");
+const { data: old, error: oe } = await sb.from("clinics").select("id").eq("slug", SLUG).maybeSingle();
+if (oe) fail(`find clinic: ${oe.message}`);
 if (old) {
   // Appointments first: dentists are "on delete restrict" from appointments, so the clinic cascade could trip on them.
   must(await sb.from("appointments").delete().eq("clinic_id", old.id).select("id"), "wipe appointments");
@@ -184,7 +185,8 @@ for (const [i, c] of CHATS.entries()) {
 }
 
 // ---- Logins ----
-const list = must(await sb.auth.admin.listUsers({ perPage: 1000 }), "list users");
+const { data: list, error: le } = await sb.auth.admin.listUsers({ perPage: 1000 });
+if (le) fail(`list users: ${le.message}`);
 let env = readFileSync(".env.local", "utf8");
 const setEnv = (k: string, v: string) => {
   const line = `${k}=${v}`;

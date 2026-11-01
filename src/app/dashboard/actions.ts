@@ -62,9 +62,12 @@ const STATUSES = ["booked", "completed", "no_show", "cancelled"];
 export async function setVisitStatus(id: string, status: string) {
   if (!STATUSES.includes(status)) return;
   const sb = await supabaseServer();
-  const { error } = await sb.from("appointments").update({ status }).eq("id", id);
-  // The exclusion constraint refuses moving a cancelled visit back onto a taken slot.
+  // A cancelled visit is never revived here: its dentist may be off or inactive now, so rebooking goes through the booking dialog.
+  let q = sb.from("appointments").update({ status }).eq("id", id);
+  if (status === "booked") q = q.neq("status", "cancelled");
+  const { data, error } = await q.select("id");
   if (error) throw new Error(error.code === "23P01" ? "That time is taken now." : "Could not update the visit.");
+  if (!data.length) throw new Error("Cancelled visits can't be restored. Book a new visit instead.");
   refresh();
 }
 

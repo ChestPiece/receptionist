@@ -289,14 +289,17 @@ function ChatView({ slug, clinicName, persona, phone, logo, info, id, start }: C
   const paused = pausedState ?? start?.paused ?? false;
   const [back, setBack] = useState(false);
   const last = useRef<number | null>(null);
+  const inFlight = useRef(false);
   const check = useCallback(async () => {
-    if (!start) return;
+    if (!start || inFlight.current) return;
+    inFlight.current = true;
     const after = last.current ?? start.lastId;
     const d = await feed(slug, id, after);
+    inFlight.current = false;
     if (!d) return;
     last.current = newest(d.messages, after);
     const staff = d.messages.filter((m) => m.role === "staff");
-    if (staff.length) setMessages((ms) => [...ms, ...staff.map(toUi)]);
+    if (staff.length) setMessages((ms) => [...ms, ...staff.map(toUi).filter((u) => !ms.some((m) => m.id === u.id))]);
     setBack(paused && !d.paused);
     setPaused(d.paused);
   }, [start, slug, id, paused, setMessages]);
