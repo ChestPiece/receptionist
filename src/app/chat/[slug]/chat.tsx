@@ -186,7 +186,7 @@ function SidebarBody({ name, sample, logo, persona, info, phone }: SideProps) {
   );
 }
 
-const STARTERS = ["Book a cleaning", "Anything free Thursday evening?", "مواعيدكم يوم السبت؟", "Do you take my insurance?"];
+const CHIPS = ["Book a visit", "Prices", "Opening hours", "My appointments", "Talk to the front desk"];
 
 // One anonymous id per browser, so Sara remembers the visitor between visits.
 function visitorId(test?: boolean) {
@@ -326,6 +326,19 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, id, star
   const [sheet, setSheet] = useState(false);
   const side = <SidebarBody name={name} sample={sample} logo={logo} persona={persona} info={info} phone={phone} />;
   const empty = messages.length === 0;
+  const [typedAt, setTypedAt] = useState(-1); // message count when the visitor started typing: chips hide until the next message
+  const chips = !paused && !busy && typedAt !== messages.length && (empty ? greeted : messages.at(-1)?.role === "assistant");
+  // Typing anywhere goes to the message box (the keystroke lands there because focus moves during keydown).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
+      const t = e.target as HTMLElement | null;
+      if (t?.closest("input, textarea, select, [contenteditable], [role=dialog]")) return;
+      document.querySelector<HTMLTextAreaElement>("form textarea")?.focus();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
 
   return (
     <div className="flex h-full">
@@ -390,15 +403,6 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, id, star
                         </Bubble>
                       </MessageContent>
                     </Message>
-                    {empty && (
-                      <div className="flex flex-wrap gap-2">
-                        {STARTERS.map((q, i) => (
-                          <motion.div key={q} initial={reduce ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, ease: EASE_OUT, delay: 0.1 + i * 0.04 }}>
-                            <Suggestion suggestion={q} onClick={send} dir="auto" className="h-9 bg-card" />
-                          </motion.div>
-                        ))}
-                      </div>
-                    )}
                   </div>
                 </Enter>
               ) : (
@@ -465,12 +469,19 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, id, star
         </Conversation>
 
         <div className="relative mx-auto flex w-full max-w-3xl flex-col gap-3 px-4 pb-4 pt-1 before:pointer-events-none before:absolute before:inset-x-0 before:-top-8 before:h-8 before:bg-gradient-to-t before:from-background before:to-transparent sm:px-6">
+          {chips && (
+            <div className="flex flex-wrap gap-2">
+              {CHIPS.map((q) => (
+                <Suggestion key={q} suggestion={q} onClick={send} className="h-8 bg-card text-[13px]" />
+              ))}
+            </div>
+          )}
           <PromptInput
             onSubmit={({ text }) => void send(text)}
             className="[&_[data-slot=input-group]]:rounded-2xl [&_[data-slot=input-group]]:bg-card [&_[data-slot=input-group]]:shadow-sm"
           >
             <PromptInputBody>
-              <PromptInputTextarea dir="auto" placeholder={`Message ${persona}…`} rows={1} className="min-h-0 py-3.5 ps-4" />
+              <PromptInputTextarea dir="auto" onChange={() => setTypedAt(messages.length)} placeholder={`Message ${persona}…`} rows={1} className="min-h-0 py-3.5 ps-4" />
             </PromptInputBody>
             <InputGroupAddon align="inline-end">
               <PromptInputSubmit status={status} onStop={stop} className="rounded-full">

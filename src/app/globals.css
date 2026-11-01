@@ -196,6 +196,17 @@
   html {
     @apply font-sans;
     }
+  /* Thin, theme-colored scrollbars with no arrow buttons. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  @supports not (scrollbar-width: thin) {
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-button { display: none; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 9999px; }
+  }
 }
 
 /* Press feedback: every button confirms the tap. */
