@@ -11,12 +11,12 @@ export function frameAt(progress: number, count: number) {
 
 const frameUrl = (base: string, set: string, i: number) => `${base}/${set}/${String(i + 1).padStart(4, "0")}.webp`;
 
-// Plays a pre-rendered WebP sequence (`${base}/lg/0001.webp`, `${base}/sm/0001.webp`) on a canvas, scrubbed by scroll.
+// Plays a pre-rendered WebP sequence (`${base}/lg/0001.webp` landscape, `${base}/pt/0001.webp` portrait) on a canvas, scrubbed by scroll.
 // No pin: by default the scrub runs while the canvas's parent crosses the viewport, from its top entering at the bottom
 // to its bottom reaching 40% below the viewport top (landing spec, bridge section). `start`, `end` and `onProgress`
 // override that window and report progress.
-type Props = { base: string; count: number; smCount: number; className?: string; start?: string; end?: string; onProgress?: (p: number) => void };
-export function FrameSequence({ base, count, smCount, className, start = "top bottom", end = "bottom top+=40%", onProgress }: Props) {
+type Props = { base: string; count: number; ptCount: number; className?: string; start?: string; end?: string; onProgress?: (p: number) => void };
+export function FrameSequence({ base, count, ptCount, className, start = "top bottom", end = "bottom top+=40%", onProgress }: Props) {
   const ref = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -24,11 +24,12 @@ export function FrameSequence({ base, count, smCount, className, start = "top bo
     const ctx = canvas?.getContext("2d");
     if (!canvas || !ctx) return;
 
-    // ponytail: the set is picked once at mount; crossing 768 px later keeps the first set.
-    const small = window.matchMedia("(max-width: 767px)").matches;
+    // Portrait screens (phones, upright tablets) get the portrait cut, so cover-cropping never cuts the phone off.
+    // ponytail: the set is picked once at mount; rotating the device later keeps the first set.
+    const portrait = window.matchMedia("(max-aspect-ratio: 4/5)").matches;
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const set = small ? "sm" : "lg";
-    const n = small ? smCount : count;
+    const set = portrait ? "pt" : "lg";
+    const n = portrait ? ptCount : count;
     const frames: HTMLImageElement[] = [];
     let current = reduced ? n - 1 : 0;
 
@@ -104,7 +105,7 @@ export function FrameSequence({ base, count, smCount, className, start = "top bo
       resize.disconnect();
       for (const img of frames) if (img) img.onload = null;
     };
-  }, [base, count, smCount, start, end, onProgress]);
+  }, [base, count, ptCount, start, end, onProgress]);
 
   return <canvas ref={ref} className={className} aria-hidden="true" />;
 }

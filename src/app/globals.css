@@ -3,6 +3,8 @@
 @import "shadcn/tailwind.css";
 
 @custom-variant dark (&:is(.dark *));
+/* Same breakpoint FrameSequence uses to pick the portrait film cut. */
+@custom-variant portrait-film (@media (max-aspect-ratio: 4/5));
 
 @theme inline {
     --font-heading: var(--font-serif);
@@ -339,9 +341,12 @@
 .film { --p: 0; }
 .film-cap { --show: clamp(0, min((var(--p) - var(--a)) * 14, (var(--b) - var(--p)) * 14), 1);
   opacity: var(--show); translate: 0 calc((1 - var(--show)) * 12px); }
-/* A scrim under the captions while it is night; it lifts as the shot reaches morning. */
-.film-scrim { background: linear-gradient(to top, color-mix(in oklab, var(--night) 70%, transparent), transparent 45%);
+/* A scrim behind the captions while it is night (left column, or the bottom band in portrait); it lifts at morning. */
+.film-scrim { background: linear-gradient(to right, color-mix(in oklab, var(--night) 70%, transparent), transparent 45%);
   opacity: clamp(0, (0.72 - var(--p)) * 6, 1); }
+@media (max-aspect-ratio: 4/5) {
+  .film-scrim { background: linear-gradient(to top, color-mix(in oklab, var(--night) 70%, transparent), transparent 45%); }
+}
 @media (prefers-reduced-motion: reduce) { .film { --p: 1 !important; } }
 
 /* The overnight booking on the week calendar: a soft dawn halo, the one highlight of the How it works section. */

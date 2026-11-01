@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      @font-face{font-family:"Geist";font-weight:100 900;src:url("assets/fonts/geist.woff2") format("woff2")}
+      /* Scroll film: one night, 150 frames, 5 s at 30 fps. Progress p = t / 5. Beats are in the GSAP block below.
+         Subject = the phone + chat UI. Background = sky/light field only (no props). Frames carry no captions. */
+      :root{
+        --night:#0d1210;--sage:#4f6f5c;--sage-glow:#93b59d;--sage-soft:#dfe8df;
+        --sand:#e9c9a8;--paper:#fafaf9;--ink:#0c0a09;--muted:#57534e;--line:#e7e5e4;
+      }
+      *{margin:0;padding:0;box-sizing:border-box}
+      html,body{width:1080px;height:1920px;overflow:hidden;background:var(--night)}
+      #root{position:relative;width:100%;height:100%;overflow:hidden;background:var(--night);font-family:"Geist",sans-serif;color:#eef0ea}
+      .abs{position:absolute}
+      .fill{position:absolute;inset:0}
+
+      /* ---- sky ---- */
+      #night{background:radial-gradient(90% 80% at 50% 40%,#16211b 0%,#0d1210 60%,#080b09 100%)}
+      #dawn{opacity:0;background:linear-gradient(180deg,#1c2622 0%,#4a4b43 30%,#a38e77 55%,#e9c9a8 76%,#f4e6d3 100%)}
+      #morning{opacity:0;background:var(--paper)}
+      #far{inset:-120px}
+      .pane{position:absolute;filter:blur(46px);border-radius:12px}
+      .bokeh{position:absolute;border-radius:50%;filter:blur(18px)}
+      #vig{display:none}
+      #glow{left:-60px;top:100px;width:1200px;height:1200px;border-radius:50%;opacity:0;
+        background:radial-gradient(closest-side,rgb(147 181 157 / .42),rgb(147 181 157 / .14) 55%,transparent 100%)}
+
+      /* ---- phone ---- */
+      #phone{left:290px;top:190px;width:500px;height:1020px}
+      #body{position:absolute;inset:0;border-radius:88px;
+        background:linear-gradient(160deg,#4a504c 0%,#262b28 18%,#151917 55%,#252a27 100%);
+        box-shadow:0 70px 140px rgb(0 0 0 / .55),0 20px 40px rgb(0 0 0 / .4),
+          inset 0 0 0 1.5px rgb(255 255 255 / .22),inset 0 0 0 5px #0b0e0c,inset 0 0 0 6px rgb(255 255 255 / .06)}
+      .btn{position:absolute;width:5px;border-radius:3px;background:linear-gradient(90deg,#3a403c,#1a1e1c)}
+      #screen{position:absolute;left:14px;top:14px;width:472px;height:992px;border-radius:74px;overflow:hidden;background:#0a0e0c}
+      #island{position:absolute;left:174px;top:16px;width:124px;height:36px;border-radius:20px;background:#000;z-index:30}
+      .sb{position:absolute;top:20px;font-size:19px;font-weight:600;z-index:29}
+      #sigs{position:absolute;right:42px;top:24px;display:flex;gap:6px;align-items:flex-end;z-index:29}
+      #sigs i{display:block;width:5px;border-radius:1px;background:#eef0ea}
+      #batt{width:30px;height:15px;border-radius:5px;border:1.5px solid rgb(238 240 234 / .6);margin-left:8px;padding:1.5px}
+      #batt b{display:block;height:100%;width:78%;border-radius:2px;background:#eef0ea}
+
+      /* chat */
+      #chat{position:absolute;inset:0;background:#16221c}
+      #hdr{position:absolute;left:0;right:0;top:0;height:152px;background:#1c2b23;border-bottom:1px solid rgb(255 255 255 / .06)}
+      #back{position:absolute;left:30px;top:90px;width:14px;height:14px;border-left:3px solid #93b59d;border-bottom:3px solid #93b59d;transform:rotate(45deg)}
+      .av{position:absolute;width:48px;height:48px;border-radius:50%;background:#2a3a31;color:#dfe8df;font-weight:600;font-size:17px;display:flex;align-items:center;justify-content:center}
+      #hname{position:absolute;left:112px;top:76px;font-size:21px;font-weight:600;color:#f4f1ea}
+      #hsub{position:absolute;left:112px;top:104px;font-size:14.5px;color:#93b59d}
+      #thread{position:absolute;left:0;right:0;top:152px;padding:18px 22px 0;display:flex;flex-direction:column;gap:13px}
+      .chip{align-self:center;font-size:13px;color:#8d9a92;background:#18231d;border-radius:12px;padding:5px 12px}
+      .bub{max-width:332px;border-radius:20px;padding:11px 16px 9px;font-size:20px;line-height:1.28}
+      .bub small{display:block;text-align:right;font-size:12px;margin-top:3px;opacity:.6}
+      #m1{align-self:flex-start;background:#26362e;border-top-left-radius:6px;color:#eef0ea}
+      #sara{align-self:flex-end;display:grid}
+      #sara > *{grid-area:1/1}
+      #m2{background:var(--sage-soft);color:var(--ink);border-top-right-radius:6px}
+      .who{display:block;font-size:12.5px;font-weight:650;color:#3d5a49;margin-bottom:3px;letter-spacing:.01em}
+      #dots{align-self:end;justify-self:end;display:flex;gap:6px;background:var(--sage-soft);border-radius:20px;border-top-right-radius:6px;padding:15px 18px}
+      #dots i{display:block;width:9px;height:9px;border-radius:50%;background:#5c7566}
+      #picker{align-self:flex-end;width:372px;background:#1e2d25;border:1px solid rgb(255 255 255 / .09);border-radius:22px;padding:14px 14px 14px}
+      #picker .t{font-size:14px;color:#8d9a92;margin:0 4px 10px}
+      #slots{display:flex;gap:8px}
+      .slot{flex:1;height:48px;border-radius:14px;border:1.5px solid #93b59d;color:var(--sage-soft);font-size:18px;font-weight:600;display:flex;align-items:center;justify-content:center}
+      #booked{align-self:flex-end;width:394px;background:var(--paper);color:var(--ink);border-radius:24px;padding:18px 20px 16px;box-shadow:0 14px 40px rgb(0 0 0 / .4),0 0 0 1.5px rgb(147 181 157 / .6)}
+      #booked .top{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+      .ck{position:relative;width:38px;height:38px;border-radius:50%;background:var(--sage)}
+      .ck::after{content:"";position:absolute;left:13px;top:8px;width:9px;height:17px;border-right:3.5px solid #fff;border-bottom:3.5px solid #fff;transform:rotate(40deg)}
+      #booked h3{font-size:25px;font-weight:650;letter-spacing:-.01em}
+      .row{border-top:1px solid var(--line);padding:9px 0 3px}
+      .row span{display:block;font-size:12.5px;color:var(--muted)}
+      .row b{display:block;font-size:19px;font-weight:600;margin-top:1px}
+      #bar{position:absolute;left:0;right:0;bottom:0;height:92px;background:#1c2b23}
+      #input{position:absolute;left:20px;right:20px;top:14px;height:46px;border-radius:23px;background:#27382f;color:#8ea296;font-size:18px;padding:11px 20px}
+      .home{position:absolute;left:161px;bottom:12px;width:150px;height:5px;border-radius:3px;background:#eef0ea;opacity:.85;z-index:31}
+
+      /* lock screen */
+      #lock{position:absolute;inset:0;background:radial-gradient(120% 70% at 50% 20%,#22352b 0%,#0f1a14 60%,#080c0a 100%)}
+      #ldate{position:absolute;left:0;right:0;top:130px;text-align:center;font-size:23px;font-weight:500;color:#cfd8d1}
+      #lclock{position:absolute;left:0;right:0;top:162px;text-align:center;font-size:164px;font-weight:200;letter-spacing:-4px;color:#f4f1ea;line-height:1}
+      #notif{position:absolute;left:22px;right:22px;top:520px;background:#27342d;border-radius:28px;padding:18px 18px 18px;display:flex;gap:14px;box-shadow:0 12px 30px rgb(0 0 0 / .35)}
+      #notif .av{position:static;flex:none;width:46px;height:46px;font-size:16px}
+      #notif .n{font-size:17px;font-weight:600;color:#f4f1ea;display:flex;justify-content:space-between}
+      #notif .n em{font-style:normal;font-weight:400;color:#8d9a92;font-size:15px}
+      #notif p{font-size:18.5px;line-height:1.3;color:#dfe5df;margin-top:3px}
+
+      #off{position:absolute;inset:0;background:#070a08;z-index:20}
+      #sweep{position:absolute;top:-200px;left:-300px;width:240px;height:1500px;z-index:25;mix-blend-mode:screen;
+        background:linear-gradient(90deg,transparent,rgb(255 255 255 / .16),transparent);transform-origin:50% 50%}
+      #spec{position:absolute;inset:0;z-index:24;background:linear-gradient(118deg,rgb(255 255 255 / .09) 0%,rgb(255 255 255 / 0) 34%)}
+
+      /* ---- week card ---- */
+      #cal{left:60px;top:330px;width:960px;height:740px;border-radius:32px;background:#fff;border:1px solid var(--line);opacity:0;
+        box-shadow:0 36px 90px rgb(28 25 23 / .20),0 8px 22px rgb(28 25 23 / .10);overflow:hidden;color:var(--ink)}
+      #cal .head{position:absolute;left:44px;top:34px;right:44px;display:flex;justify-content:space-between;align-items:baseline}
+      #cal h2{font-size:34px;font-weight:650;letter-spacing:-.02em}
+      #cal .head span{font-size:19px;color:var(--muted)}
+      #days{position:absolute;left:44px;right:44px;top:104px;height:64px;display:grid;grid-template-columns:84px repeat(3,1fr);border-bottom:1px solid var(--line)}
+      #days div{font-size:19px;font-weight:600;padding-top:6px}
+      #days div span{font-weight:400;color:var(--muted);margin-left:8px}
+      #grid{position:absolute;left:44px;right:44px;top:168px;height:520px;display:grid;grid-template-columns:84px repeat(3,1fr)}
+      .col{position:relative;border-left:1px solid var(--line);background:repeating-linear-gradient(180deg,transparent 0 51px,var(--line) 51px 52px)}
+      #times{position:relative}
+      #times span{position:absolute;left:0;font-size:15px;color:var(--muted);transform:translateY(-9px)}
+      .bk{position:absolute;left:10px;right:10px;height:46px;border-radius:12px;background:#f3f1ee;border-left:4px solid #a8a29e;padding:5px 12px;font-size:16px;font-weight:600;line-height:1.2}
+      .bk span{display:block;font-weight:400;font-size:13.5px;color:var(--muted)}
+      #new{background:var(--sage);border-left-color:var(--sage-glow);color:#fff;
+        box-shadow:0 0 0 3px rgb(147 181 157 / .7),0 10px 28px rgb(79 111 92 / .45);z-index:3}
+      #new span{color:rgb(255 255 255 / .82)}
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-width="1080" data-height="1920" data-duration="5" data-fps="30">
+      <div id="scene" class="fill clip" data-start="0" data-duration="5" data-track-index="0">
+
+        <div id="night" class="fill"></div>
+        <div id="dawn" class="fill"></div>
+
+        <!-- far layers: out-of-focus window light + city bokeh. Light only, no props. -->
+        <div id="far" class="abs">
+          <div class="pane" style="left:300px;top:500px;width:130px;height:520px;background:rgb(147 181 157 / .09)"></div>
+          <div class="pane" style="left:700px;top:560px;width:150px;height:440px;background:rgb(233 201 168 / .07)"></div>
+        </div>
+        <div id="vig" class="fill"></div>
+        <div id="morning" class="fill"></div>
+
+        <div id="glow" class="abs"></div>
+
+        <div id="phone" class="abs">
+          <div class="btn" style="left:-3px;top:210px;height:48px"></div>
+          <div class="btn" style="left:-3px;top:290px;height:84px"></div>
+          <div class="btn" style="left:-3px;top:392px;height:84px"></div>
+          <div class="btn" style="right:-3px;top:330px;height:128px"></div>
+          <div id="body"></div>
+          <div id="screen" data-layout-allow-occlusion data-layout-allow-overlap>
+            <div id="island"></div>
+            <div class="sb" style="left:46px">2:14</div>
+            <div id="sigs"><i style="height:6px"></i><i style="height:9px"></i><i style="height:12px"></i><i style="height:15px"></i><div id="batt"><b></b></div></div>
+
+            <div id="chat">
+              <div id="hdr">
+                <div id="back"></div>
+                <div class="av" style="left:52px;top:72px">SP</div>
+                <div id="hname">Sample Patient</div>
+                <div id="hsub">Sara is replying</div>
+              </div>
+              <div id="thread">
+                <div class="chip">Tue 27 Oct</div>
+                <div id="m1" class="bub">Hi, anything free Thursday evening for a cleaning?<small>2:14</small></div>
+                <div id="sara">
+                  <div id="dots"><i></i><i></i><i></i></div>
+                  <div id="m2" class="bub"><span class="who">Sara</span>Yes, I have Thursday evening. Pick a time and I'll book it.<small>2:14</small></div>
+                </div>
+                <div id="picker">
+                  <div class="t">Thursday 29 Oct</div>
+                  <div id="slots"><div class="slot" id="s1">5:00 pm</div><div class="slot" id="s2">6:30 pm</div><div class="slot" id="s3">7:15 pm</div></div>
+                </div>
+                <div id="booked">
+                  <div class="top"><div class="ck"></div><h3>You're booked</h3></div>
+                  <div class="row"><span>Visit</span><b>Cleaning &amp; polish</b></div>
+                  <div class="row"><span>When</span><b>Thu 29 Oct, 6:30 pm</b></div>
+                  <div class="row"><span>Where</span><b>Sample Smile Dental, Jumeirah</b></div>
+                </div>
+              </div>
+              <div id="bar"><div id="input">Message</div></div>
+            </div>
+
+            <div id="lock">
+              <div id="ldate">Tuesday, 27 October</div>
+              <div id="lclock">02:14</div>
+              <div id="notif">
+                <div class="av">SP</div>
+                <div style="flex:1"><div class="n">Sample Patient<em>now</em></div><p>Hi, anything free Thursday evening for a cleaning?</p></div>
+              </div>
+            </div>
+
+            <div class="home"></div>
+            <div id="spec"></div>
+            <div id="sweep"></div>
+            <div id="off"></div>
+          </div>
+        </div>
+
+        <div id="cal" class="abs" data-layout-allow-occlusion data-layout-allow-overlap>
+          <div class="head"><h2>This week</h2><span>Sample Smile Dental</span></div>
+          <div id="days"><div></div><div>Tue<span>27</span></div><div>Wed<span>28</span></div><div>Thu<span>29</span></div></div>
+          <div id="grid">
+            <div id="times">
+              <span style="top:0">10 am</span><span style="top:104px">12 pm</span><span style="top:208px">2 pm</span><span style="top:312px">4 pm</span><span style="top:416px">6 pm</span><span style="top:520px;display:none">8 pm</span>
+            </div>
+                        <div class="col"><div class="bk" style="top:110px">Filling<span>12:00 pm</span></div><div class="bk" style="top:318px">Consult<span>4:00 pm</span></div></div>
+            <div class="col"><div class="bk" style="top:58px">Cleaning<span>11:00 am</span></div><div class="bk" style="top:422px">Check-up<span>6:00 pm</span></div></div>
+            <div class="col"><div class="bk" style="top:162px">Consult<span>1:00 pm</span></div><div class="bk" id="new" style="top:446px">Cleaning &amp; polish<span>6:30 pm</span></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      /* Beats over progress p (0..1) = t / 5 s:
+         0-.12 dark room | .12-.25 phone lights, 02:14 lock, patient message | .25-.45 Sara replies, slots
+         .45-.60 6:30 picked, booked card | .60-.72 phone dims, dawn | .72-.82 phone exits up, gone by .82
+         .76-.86 week card rises in, full opacity from .86 to 1, morning. Lock fades .25-.27, first message .275-.30 */
+      const T = (p) => p * 5;
+      const tl = gsap.timeline({ paused: true });
+      const S = (sel, vars, p0, p1, ease = "power2.out") => tl.to(sel, { ...vars, duration: T(p1 - p0), ease }, T(p0));
+      const F = (sel, from, to, p0, p1, ease = "power2.out") => tl.fromTo(sel, from, { ...to, duration: T(p1 - p0), ease }, T(p0));
+
+      gsap.set("#phone", { transformPerspective: 2600, transformOrigin: "50% 50%" });
+      gsap.set("#cal", { transformPerspective: 2200, transformOrigin: "50% 100%" });
+      gsap.set(["#m1", "#m2", "#picker", "#booked", "#dots", "#notif"], { opacity: 0 });
+      gsap.set("#lock", { opacity: 1 });
+
+      /* camera: slow dolly on the phone, far layers move less */
+      F("#phone", { scale: 0.9, rotationY: -10, rotationX: 5, y: 8 }, { scale: 0.97, rotationY: -4, rotationX: 2, y: -4 }, 0, 0.8, "none");
+      S("#phone", { y: -1400, scale: 1.1, rotationX: 24, rotationY: 6 }, 0.72, 0.82, "power2.in");
+      F("#far", { scale: 1, x: 0 }, { scale: 1.06, x: -26 }, 0, 0.8, "none");
+      S("#far", { opacity: 0 }, 0.62, 0.84, "none");
+      S("#vig", { opacity: 0 }, 0.7, 0.9, "none");
+
+      /* sky: night -> dawn -> morning */
+      S("#dawn", { opacity: 1 }, 0.56, 0.8, "sine.inOut");
+      S("#morning", { opacity: 1 }, 0.74, 0.86, "sine.inOut");
+
+      /* screen glow on the room */
+      F("#glow", { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1 }, 0.12, 0.22);
+      S("#glow", { opacity: 0 }, 0.6, 0.69, "none");
+      F("#glow", { y: 0 }, { y: 0 }, 0, 0.001);
+
+      /* glass light sweep (slow, across the whole run) */
+      F("#sweep", { x: 0, rotation: 18 }, { x: 1000, rotation: 18 }, 0.02, 0.82, "sine.inOut");
+
+      /* power on, lock screen, notification */
+      S("#off", { opacity: 0 }, 0.12, 0.18);
+      F("#lock > *", { opacity: 0 }, { opacity: 1 }, 0.12, 0.18);
+      F("#notif", { opacity: 0, y: 36, scale: 0.96 }, { opacity: 1, y: 0, scale: 1 }, 0.2, 0.25, "back.out(1.2)");
+
+      /* lock -> chat */
+      S("#lock", { opacity: 0 }, 0.25, 0.27, "power1.inOut");
+      F("#m1", { opacity: 0, y: 14 }, { opacity: 1, y: 0 }, 0.275, 0.30);
+      F("#dots", { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1 }, 0.30, 0.32);
+      S("#dots", { opacity: 0 }, 0.34, 0.355, "none");
+      F("#m2", { opacity: 0, y: 12 }, { opacity: 1, y: 0 }, 0.335, 0.37);
+      F("#picker", { opacity: 0, y: 16 }, { opacity: 1, y: 0 }, 0.395, 0.44);
+
+      /* pick 6:30 */
+      S("#s2", { backgroundColor: "#4f6f5c", color: "#ffffff", borderColor: "#93b59d" }, 0.455, 0.485);
+      S("#s1", { opacity: 0.4 }, 0.455, 0.485);
+      S("#s3", { opacity: 0.4 }, 0.455, 0.485);
+      F("#booked", { opacity: 0, y: 24, scale: 0.97 }, { opacity: 1, y: 0, scale: 1 }, 0.5, 0.56, "back.out(1.1)");
+
+      /* phone goes to sleep */
+      S("#off", { opacity: 0.94 }, 0.6, 0.69, "sine.inOut");
+      S("#spec", { opacity: 0.4 }, 0.6, 0.74, "none");
+
+      /* week card */
+      F("#cal", { y: 150, rotationX: 10, scale: 0.96 }, { y: 0, rotationX: 0, scale: 1 }, 0.76, 0.86, "power3.out");
+      F("#cal", { opacity: 0 }, { opacity: 1 }, 0.78, 0.84, "none");
+
+      window.__timelines = window.__timelines || {};
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

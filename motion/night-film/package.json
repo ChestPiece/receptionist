@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "npx --yes hyperframes@0.8.181 preview",
     "check": "npx --yes hyperframes@0.8.181 check",
-    "render": "npx --yes hyperframes@0.8.181 render --format png-sequence -o renders/png",
-    "frames": "npm run render && node ../../scripts/frames-to-webp.mjs renders/png ../../public/frames/film 72"
+    "render": "npx --yes hyperframes@0.8.181 render --format mp4 --workers 1 --crf 6 -o renders/film.mp4",
+    "frames": "npm run render && node ../../scripts/frames-to-webp.mjs lg renders/film.mp4 ../../public/frames/film 72"
   }
 }

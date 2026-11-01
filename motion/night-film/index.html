@@ -10,7 +10,7 @@
          Subject = the phone + chat UI. Background = sky/light field only (no props). Frames carry no captions. */
       :root{
         --night:#0d1210;--sage:#4f6f5c;--sage-glow:#93b59d;--sage-soft:#dfe8df;
-        --sand:#e9c9a8;--paper:#fafaf9;--ink:#0c0a09;--muted:#6b6560;--line:#e7e5e4;
+        --sand:#e9c9a8;--paper:#fafaf9;--ink:#0c0a09;--muted:#57534e;--line:#e7e5e4;
       }
       *{margin:0;padding:0;box-sizing:border-box}
       html,body{width:1920px;height:1080px;overflow:hidden;background:var(--night)}
@@ -25,12 +25,12 @@
       #far{inset:-120px}
       .pane{position:absolute;filter:blur(46px);border-radius:12px}
       .bokeh{position:absolute;border-radius:50%;filter:blur(18px)}
-      #vig{background:radial-gradient(75% 75% at 50% 50%,transparent 55%,rgb(0 0 0 / .45) 100%)}
-      #glow{left:360px;top:-60px;width:1200px;height:1200px;border-radius:50%;opacity:0;
+      #vig{display:none}
+      #glow{left:550px;top:-60px;width:1200px;height:1200px;border-radius:50%;opacity:0;
         background:radial-gradient(closest-side,rgb(147 181 157 / .42),rgb(147 181 157 / .14) 55%,transparent 100%)}
 
       /* ---- phone ---- */
-      #phone{left:710px;top:30px;width:500px;height:1020px}
+      #phone{left:900px;top:30px;width:500px;height:1020px}
       #body{position:absolute;inset:0;border-radius:88px;
         background:linear-gradient(160deg,#4a504c 0%,#262b28 18%,#151917 55%,#252a27 100%);
         box-shadow:0 70px 140px rgb(0 0 0 / .55),0 20px 40px rgb(0 0 0 / .4),
@@ -94,8 +94,8 @@
       #spec{position:absolute;inset:0;z-index:24;background:linear-gradient(118deg,rgb(255 255 255 / .09) 0%,rgb(255 255 255 / 0) 34%)}
 
       /* ---- week card ---- */
-      #cal{left:350px;top:170px;width:1220px;height:740px;border-radius:32px;background:#fff;border:1px solid var(--line);opacity:0;
-        box-shadow:0 40px 90px rgb(60 48 36 / .14),0 6px 18px rgb(60 48 36 / .07);overflow:hidden;color:var(--ink)}
+      #cal{left:700px;top:170px;width:1000px;height:740px;border-radius:32px;background:#fff;border:1px solid var(--line);opacity:0;
+        box-shadow:0 36px 90px rgb(28 25 23 / .20),0 8px 22px rgb(28 25 23 / .10);overflow:hidden;color:var(--ink)}
       #cal .head{position:absolute;left:44px;top:34px;right:44px;display:flex;justify-content:space-between;align-items:baseline}
       #cal h2{font-size:34px;font-weight:650;letter-spacing:-.02em}
       #cal .head span{font-size:19px;color:var(--muted)}
@@ -106,10 +106,10 @@
       .col{position:relative;border-left:1px solid var(--line);background:repeating-linear-gradient(180deg,transparent 0 51px,var(--line) 51px 52px)}
       #times{position:relative}
       #times span{position:absolute;left:0;font-size:15px;color:var(--muted);transform:translateY(-9px)}
-      .bk{position:absolute;left:10px;right:10px;height:46px;border-radius:12px;background:#f3f1ee;border-left:4px solid #d6d3d1;padding:5px 12px;font-size:16px;font-weight:600;line-height:1.2}
+      .bk{position:absolute;left:10px;right:10px;height:46px;border-radius:12px;background:#f3f1ee;border-left:4px solid #a8a29e;padding:5px 12px;font-size:16px;font-weight:600;line-height:1.2}
       .bk span{display:block;font-weight:400;font-size:13.5px;color:var(--muted)}
       #new{background:var(--sage);border-left-color:var(--sage-glow);color:#fff;
-        box-shadow:0 0 0 4px rgb(147 181 157 / .6),0 0 44px 6px rgb(147 181 157 / .55);z-index:3}
+        box-shadow:0 0 0 3px rgb(147 181 157 / .7),0 10px 28px rgb(79 111 92 / .45);z-index:3}
       #new span{color:rgb(255 255 255 / .82)}
     </style>
   </head>
@@ -122,14 +122,8 @@
 
         <!-- far layers: out-of-focus window light + city bokeh. Light only, no props. -->
         <div id="far" class="abs">
-          <div class="pane" style="left:230px;top:200px;width:150px;height:430px;background:rgb(147 181 157 / .10)"></div>
-          <div class="pane" style="left:420px;top:150px;width:110px;height:520px;background:rgb(233 201 168 / .07)"></div>
-          <div class="pane" style="left:1540px;top:260px;width:170px;height:380px;background:rgb(147 181 157 / .08)"></div>
-          <div class="pane" style="left:1760px;top:220px;width:90px;height:460px;background:rgb(233 201 168 / .06)"></div>
-          <div class="bokeh" style="left:160px;top:760px;width:60px;height:60px;background:rgb(233 201 168 / .10)"></div>
-          <div class="bokeh" style="left:330px;top:840px;width:40px;height:40px;background:rgb(147 181 157 / .12)"></div>
-          <div class="bokeh" style="left:1620px;top:820px;width:70px;height:70px;background:rgb(233 201 168 / .09)"></div>
-          <div class="bokeh" style="left:1790px;top:740px;width:36px;height:36px;background:rgb(147 181 157 / .12)"></div>
+          <div class="pane" style="left:860px;top:260px;width:130px;height:480px;background:rgb(147 181 157 / .09)"></div>
+          <div class="pane" style="left:1420px;top:300px;width:150px;height:420px;background:rgb(233 201 168 / .07)"></div>
         </div>
         <div id="vig" class="fill"></div>
         <div id="morning" class="fill"></div>
@@ -210,7 +204,8 @@
     <script>
       /* Beats over progress p (0..1) = t / 5 s:
          0-.12 dark room | .12-.25 phone lights, 02:14 lock, patient message | .25-.45 Sara replies, slots
-         .45-.60 6:30 picked, booked card | .60-.80 phone dims, dawn | .80-1 phone lifts, week card, morning */
+         .45-.60 6:30 picked, booked card | .60-.72 phone dims, dawn | .72-.82 phone exits up, gone by .82
+         .76-.86 week card rises in, full opacity from .86 to 1, morning. Lock fades .25-.27, first message .275-.30 */
       const T = (p) => p * 5;
       const tl = gsap.timeline({ paused: true });
       const S = (sel, vars, p0, p1, ease = "power2.out") => tl.to(sel, { ...vars, duration: T(p1 - p0), ease }, T(p0));
@@ -222,15 +217,15 @@
       gsap.set("#lock", { opacity: 1 });
 
       /* camera: slow dolly on the phone, far layers move less */
-      F("#phone", { scale: 0.95, rotationY: -12, rotationX: 7, y: 14 }, { scale: 1.07, rotationY: -4, rotationX: 2, y: -8 }, 0, 0.8, "none");
-      S("#phone", { y: -1500, scale: 1.2, rotationX: 26, rotationY: 6 }, 0.76, 0.88, "power2.in");
+      F("#phone", { scale: 0.62, rotationY: -10, rotationX: 5, y: 8 }, { scale: 0.67, rotationY: -4, rotationX: 2, y: -4 }, 0, 0.8, "none");
+      S("#phone", { y: -1000, scale: 0.8, rotationX: 24, rotationY: 6 }, 0.72, 0.82, "power2.in");
       F("#far", { scale: 1, x: 0 }, { scale: 1.06, x: -26 }, 0, 0.8, "none");
       S("#far", { opacity: 0 }, 0.62, 0.84, "none");
       S("#vig", { opacity: 0 }, 0.7, 0.9, "none");
 
       /* sky: night -> dawn -> morning */
       S("#dawn", { opacity: 1 }, 0.56, 0.8, "sine.inOut");
-      S("#morning", { opacity: 1 }, 0.78, 0.9, "sine.inOut");
+      S("#morning", { opacity: 1 }, 0.74, 0.86, "sine.inOut");
 
       /* screen glow on the room */
       F("#glow", { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1 }, 0.12, 0.22);
@@ -246,9 +241,9 @@
       F("#notif", { opacity: 0, y: 36, scale: 0.96 }, { opacity: 1, y: 0, scale: 1 }, 0.2, 0.25, "back.out(1.2)");
 
       /* lock -> chat */
-      S("#lock", { opacity: 0 }, 0.25, 0.285, "power1.inOut");
-      F("#m1", { opacity: 0, y: 14 }, { opacity: 1, y: 0 }, 0.25, 0.285);
-      F("#dots", { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1 }, 0.29, 0.31);
+      S("#lock", { opacity: 0 }, 0.25, 0.27, "power1.inOut");
+      F("#m1", { opacity: 0, y: 14 }, { opacity: 1, y: 0 }, 0.275, 0.30);
+      F("#dots", { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1 }, 0.30, 0.32);
       S("#dots", { opacity: 0 }, 0.34, 0.355, "none");
       F("#m2", { opacity: 0, y: 12 }, { opacity: 1, y: 0 }, 0.335, 0.37);
       F("#picker", { opacity: 0, y: 16 }, { opacity: 1, y: 0 }, 0.395, 0.44);
@@ -264,8 +259,8 @@
       S("#spec", { opacity: 0.4 }, 0.6, 0.74, "none");
 
       /* week card */
-      F("#cal", { y: 150, rotationX: 10, scale: 0.96 }, { y: 0, rotationX: 0, scale: 1 }, 0.86, 0.98, "power3.out");
-      F("#cal", { opacity: 0 }, { opacity: 1 }, 0.86, 0.91, "none");
+      F("#cal", { y: 150, rotationX: 10, scale: 0.96 }, { y: 0, rotationX: 0, scale: 1 }, 0.76, 0.86, "power3.out");
+      F("#cal", { opacity: 0 }, { opacity: 1 }, 0.78, 0.84, "none");
 
       window.__timelines = window.__timelines || {};
       window.__timelines["main"] = tl;

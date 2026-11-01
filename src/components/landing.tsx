@@ -296,12 +296,13 @@ export function NightWaves({
 
 // The night film: the page's one pinned story. A pre-rendered HyperFrames shot (motion/night-film) scrubs while the
 // section is pinned; captions are live text, each shown over its own slice of progress (--a to --b) via --p.
-const FILM = { base: "/frames/film", count: 150, smCount: 75 };
-const FILM_LENGTH = 3.5; // pinned scroll, in viewport heights
+// lg = 1920x1080 landscape cut, pt = 720x1280 portrait cut for phones (FrameSequence picks by aspect ratio).
+const FILM = { base: "/frames/film", count: 150, ptCount: 75 };
+const FILM_LENGTH = 2.5; // pinned scroll, in viewport heights
 const CAPTIONS = [
-  { a: 0.12, b: 0.27, time: "2:14 am", text: "A patient writes while the clinic sleeps." },
-  { a: 0.29, b: 0.47, time: "2:14 am", text: "Sara offers only times that are really free." },
-  { a: 0.49, b: 0.7, time: "2:15 am", text: "Booked. Nobody had to wake up." },
+  { a: 0.1, b: 0.28, time: "2:14 am", text: "A patient writes while the clinic sleeps." },
+  { a: 0.3, b: 0.48, time: "2:14 am", text: "Sara offers only times that are really free." },
+  { a: 0.5, b: 0.74, time: "2:15 am", text: "Booked. Nobody had to wake up." },
   { a: 0.8, b: 1.5, time: "9:00 am", text: "Your team opens up to a full book.", day: true },
 ];
 
@@ -365,14 +366,15 @@ export function NightFilm() {
         )}
       </div>
       <div aria-hidden className="film-scrim absolute inset-0" />
-      <div className="relative mx-auto flex h-full w-full max-w-6xl items-end px-4 pb-[14svh] sm:px-6">
+      {/* Captions sit in the clear left column of the landscape cut, and in the clear band under the phone in portrait. */}
+      <div className="relative mx-auto flex h-full w-full max-w-6xl items-center px-4 sm:px-6 portrait-film:items-end portrait-film:pb-[12svh]">
         <ol className="grid">
           {CAPTIONS.map((c) => (
             <li
               key={c.text}
               style={{ "--a": c.a, "--b": c.b } as CSSProperties}
               className={cn(
-                "film-cap col-start-1 row-start-1 max-w-[17ch] font-display text-h2 tracking-[-0.02em] text-balance",
+                "film-cap col-start-1 row-start-1 max-w-[15ch] font-display text-h2 leading-[1.1] tracking-[-0.02em] text-balance lg:text-[2.75rem]",
                 c.day ? "text-foreground" : "text-[var(--night-foreground)]",
               )}
             >
