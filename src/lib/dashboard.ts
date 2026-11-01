@@ -3,6 +3,7 @@ import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { stillPaused } from "./agent";
+import type { Clinic } from "./clinics";
 import { roleOf, type Role } from "./role";
 import { supabaseServer } from "./supabase/server";
 import { DAYS, localDate, localTime, type Hours } from "./slots";
@@ -108,3 +109,83 @@ export type Visit = {
   created_at: string;
   patients: { name: string | null; phone: string | null; wa_id: string | null; conversations: { bot_paused: boolean; updated_at: string } | null } | null;
 };
+
+// ---------------------------------------------------------------- calendar: day = one column per dentist, week = one column per day
+
+export type SBlock = { id: string; column: string; start: number; end: number; title: string; name: string; kind: Kind; muted: boolean; color: string | null };
+export type SCol = { key: string; label: string; sub?: string; today?: boolean; date: string; dentistId?: string };
+export type Off = { column: string; from: number; to: number };
+
+// Closed stretches of [lo, hi] outside the given opening windows.
+export function gaps(wins: [string, string][], [lo, hi]: [number, number]): [number, number][] {
+  const out: [number, number][] = [];
+  let t = lo;
+  for (const [a, b] of [...wins].sort()) {
+    if (toHours(a) > t) out.push([t, Math.min(toHours(a), hi)]);
+    t = Math.max(t, toHours(b));
+  }
+  if (t < hi) out.push([t, hi]);
+  return out.filter(([a, b]) => b > a);
+}
+
+const SHORT = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", timeZone: "UTC" });
+
+export async function schedule(sb: Sb, clinic: Clinic, q: { view: "day" | "week"; date: string; dentistId?: string }) {
+  const off = clinic.utc_offset_minutes;
+  const today = localDate(new Date(), off);
+  const r = dayRange(clinic.hours);
+  const range: [number, number] = [r.from, r.to];
+  const dentists = clinic.dentists.filter((d) => d.active && (!q.dentistId || d.id === q.dentistId));
+  const days = q.view === "week" ? weekDays(weekStart(q.date)) : [q.date];
+  const startIso = new Date(Date.parse(`${days[0]}T00:00:00Z`) - off * 60_000).toISOString();
+  const endIso = new Date(Date.parse(`${addDays(days.at(-1)!, 1)}T00:00:00Z`) - off * 60_000).toISOString();
+  let visits = sb
+    .from("appointments")
+    .select("id, service, starts_at, ends_at, status, source, created_at, dentist_id, patient_id, service_id, patients(name, phone, wa_id, conversations(bot_paused, updated_at))")
+    .eq("clinic_id", clinic.id).neq("status", "cancelled").gte("starts_at", startIso).lt("starts_at", endIso).order("starts_at");
+  if (q.dentistId) visits = visits.eq("dentist_id", q.dentistId);
+  const [{ data }, { data: away }] = await Promise.all([
+    visits,
+    sb.from("time_off").select("dentist_id, starts_at, ends_at").eq("clinic_id", clinic.id).lt("starts_at", endIso).gt("ends_at", startIso),
+  ]);
+  const rows = (data ?? []) as unknown as (Visit & { dentist_id: string; patient_id: string; service_id: string | null })[];
+  const color = (id: string) => clinic.dentists.find((d) => d.id === id)?.color ?? null;
+
+  const columns: SCol[] = q.view === "week"
+    ? days.map((d) => ({ key: d, date: d, label: SHORT.format(new Date(`${d}T00:00:00Z`)), today: d === today }))
+    : dentists.map((d) => ({ key: d.id, date: q.date, dentistId: d.id, label: d.name, sub: d.title ?? undefined }));
+  const colOf = (v: { starts_at: string; dentist_id: string }) => (q.view === "week" ? localDate(new Date(v.starts_at), off) : v.dentist_id);
+
+  const blocks: SBlock[] = rows.filter((v) => columns.some((c) => c.key === colOf(v))).map((a) => {
+    const s = new Date(a.starts_at);
+    return {
+      id: a.id, column: colOf(a), start: hourOf(s, off), end: hourOf(new Date(a.ends_at), off), title: a.service, name: who(a.patients),
+      kind: stillPaused(a.patients?.conversations ?? null) ? "staff" : a.patients?.wa_id ? "wa" : "web",
+      muted: a.status === "no_show", color: color(a.dentist_id),
+    };
+  });
+
+  // Shade closed hours: the dentist's own hours in day view, the clinic's (or the one picked dentist's) in week view.
+  const shade: Off[] = [];
+  for (const c of columns) {
+    const dow = DAYS[weekday(c.date)];
+    const hours = c.dentistId ? dentists.find((d) => d.id === c.dentistId)!.hours : q.dentistId && dentists[0] ? dentists[0].hours : clinic.hours;
+    for (const [from, to] of gaps(hours[dow] ?? [], range)) shade.push({ column: c.key, from, to });
+    for (const t of away ?? []) {
+      if (c.dentistId ? t.dentist_id !== c.dentistId : !(q.dentistId && t.dentist_id === q.dentistId)) continue;
+      const dayStart = Date.parse(`${c.date}T00:00:00Z`) - off * 60_000;
+      const from = Math.max(range[0], (Date.parse(t.starts_at) - dayStart) / 3_600_000);
+      const to = Math.min(range[1], (Date.parse(t.ends_at) - dayStart) / 3_600_000);
+      if (to > from) shade.push({ column: c.key, from, to });
+    }
+  }
+  const nowCol = q.view === "week" ? (days.includes(today) ? today : null) : q.date === today ? "*" : null;
+  return { columns, blocks, off: shade, range, rows, now: nowCol ? { column: nowCol, hour: hourOf(new Date(), off) } : null };
+}
+
+// What the booking dialog needs to know about the clinic (plain data, safe to pass to the client).
+export const deskSetup = (c: Clinic) => ({
+  today: localDate(new Date(), c.utc_offset_minutes),
+  services: c.services.map((s) => ({ id: s.id, name: s.name, minutes: s.minutes })),
+  dentists: c.dentists.filter((d) => d.active).map((d) => ({ id: d.id, name: d.name, color: d.color, service_ids: d.service_ids })),
+});

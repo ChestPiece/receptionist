@@ -1,72 +1,57 @@
-import Link from "next/link";
-import { WeekCalendar } from "@/components/ledger";
-import { addDays, desk, week, weekStart, who } from "@/lib/dashboard";
+import { deskConfig } from "@/lib/clinics";
+import { addDays, desk, deskSetup, schedule, weekStart, who } from "@/lib/dashboard";
 import { localDate, localTime } from "@/lib/slots";
-import { cn } from "@/lib/utils";
 import { PageBody, PageHeader } from "../page-frame";
-import { setVisitStatus } from "../actions";
+import { NewBooking, Schedule, Toolbar, VisitSheet } from "../schedule";
 
 export const metadata = { title: "Calendar" };
 
-const LONG = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", timeZone: "UTC" });
 const FULL = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
-const STATUS = [
-  { value: "completed", label: "Came in" },
-  { value: "no_show", label: "No-show" },
-  { value: "booked", label: "Booked" },
-  { value: "cancelled", label: "Cancel visit" },
-];
+const SHORT = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+const fmt = (f: Intl.DateTimeFormat, d: string) => f.format(new Date(`${d}T00:00:00Z`));
 
 export default async function Calendar({ searchParams }: PageProps<"/dashboard/calendar">) {
-  const { sb, clinic } = await desk();
-  if (!clinic) return null;
-  const { w, a } = (await searchParams) as { w?: string; a?: string };
+  const { sb, clinic: picked } = await desk();
+  if (!picked) return null;
+  const clinic = await deskConfig(sb, picked.id);
+  const p = (await searchParams) as { v?: string; d?: string; dentist?: string; a?: string };
   const off = clinic.utc_offset_minutes;
-  const start = weekStart(w && /^\d{4}-\d{2}-\d{2}$/.test(w) ? w : localDate(new Date(), off));
-  const cal = await week(sb, clinic, start, (id) => `/dashboard/calendar?w=${start}&a=${id}`);
-  const visit = a ? cal.rows.find((r) => r.id === a) : undefined;
+  const today = localDate(new Date(), off);
+  const view = p.v === "week" ? "week" : "day";
+  const date = p.d && /^\d{4}-\d{2}-\d{2}$/.test(p.d) ? p.d : today;
+  const dentistId = clinic.dentists.some((d) => d.id === p.dentist) ? p.dentist : undefined;
+  const cal = await schedule(sb, clinic, { view, date, dentistId });
+  const setup = deskSetup(clinic);
+  const step = view === "week" ? 7 : 1;
+  const base = new URLSearchParams({ v: view, d: date, ...(dentistId ? { dentist: dentistId } : {}) }).toString();
 
-  const nav = (
-    <span className="flex items-center gap-1">
-      <Link href={`?w=${addDays(start, -7)}`} aria-label="Previous week" className="rounded-full px-2 py-1 hover:bg-rule">←</Link>
-      <Link href="?" className="rounded-full px-2 py-1 hover:bg-rule">This week</Link>
-      <Link href={`?w=${addDays(start, 7)}`} aria-label="Next week" className="rounded-full px-2 py-1 hover:bg-rule">→</Link>
-    </span>
-  );
+  const v = p.a ? cal.rows.find((r) => r.id === p.a) : undefined;
+  const title = view === "week" ? `Week of ${fmt(SHORT, weekStart(date))}` : fmt(FULL, date);
 
   return (
     <>
-      <PageHeader title="Calendar">
-        <p className="text-xs text-muted-foreground max-sm:hidden">{cal.rows.length} visits this week</p>
+      <PageHeader title={<>Calendar <span className="ms-1 font-normal text-muted-foreground max-sm:hidden">{title}</span></>}>
+        <span className="text-xs text-muted-foreground max-md:hidden">{cal.blocks.length} visits</span>
+        <NewBooking setup={setup} />
       </PageHeader>
-      <PageBody className={cn("gap-3 p-3 sm:p-4 xl:grid xl:grid-rows-1", visit && "xl:grid-cols-[1fr_300px]")}>
-        <div className="min-h-0 flex-1 xl:flex-none">
-          <WeekCalendar fill title={`Week of ${LONG.format(new Date(`${start}T00:00:00Z`))}`} days={cal.days} blocks={cal.blocks} from={cal.from} to={cal.to} now={cal.now} aside={nav} />
-        </div>
-        {visit && (
-          <aside className="slip relative min-h-0 shrink-0 overflow-y-auto p-4 max-xl:max-h-[45%]" aria-label="Visit">
-            <div className="flex items-start justify-between gap-2">
-              <span className="label">{visit.patients?.wa_id ? "WhatsApp" : "Website"} · {visit.source === "staff" ? "booked by staff" : `via ${visit.source}`}</span>
-              <Link href={`?w=${start}`} aria-label="Close" className="-mt-1 text-muted-foreground hover:text-foreground">✕</Link>
-            </div>
-            <h2 className="mt-1 text-base font-semibold">{who(visit.patients)}</h2>
-            <dl className="mt-3 grid gap-2 border-t pt-3 text-sm">
-              <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Visit</dt><dd>{visit.service}</dd></div>
-              <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Day</dt><dd>{FULL.format(new Date(`${localDate(new Date(visit.starts_at), off)}T00:00:00Z`))}</dd></div>
-              <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Time</dt><dd className="font-mono tabular-nums">{localTime(new Date(visit.starts_at), off)} to {localTime(new Date(visit.ends_at), off)}</dd></div>
-              <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Status</dt><dd>{STATUS.find((s) => s.value === visit.status)?.label ?? visit.status}</dd></div>
-            </dl>
-            <div className="mt-4 flex flex-wrap gap-2 border-t pt-3">
-              {STATUS.filter((s) => s.value !== visit.status).map((s) => (
-                <form key={s.value} action={setVisitStatus.bind(null, visit.id, s.value)}>
-                  <button className={cn("rounded-full border px-3.5 py-2 text-[13px] font-medium hover:border-foreground", s.value === "cancelled" && "border-alert/50 text-alert hover:border-alert")}>{s.label}</button>
-                </form>
-              ))}
-            </div>
-            <p className="mt-3 text-xs text-muted-foreground">To move a visit, ask the patient to message Sara: she only offers free times.</p>
-          </aside>
-        )}
+      <PageBody>
+        <Toolbar view={view} date={date} prev={addDays(date, -step)} next={addDays(date, step)} today={today} dentist={dentistId} dentists={setup.dentists} />
+        <Schedule columns={cal.columns} blocks={cal.blocks} off={cal.off} range={cal.range} now={cal.now} linkBase={base} setup={setup} />
       </PageBody>
+      {v && (
+        <VisitSheet
+          key={v.id}
+          closeHref={`?${base}`}
+          setup={setup}
+          visit={{
+            id: v.id, patient: who(v.patients), patientId: v.patient_id, service: v.service, serviceId: v.service_id,
+            dentist: setup.dentists.length > 1 ? clinic.dentists.find((d) => d.id === v.dentist_id)?.name ?? null : null,
+            day: fmt(FULL, localDate(new Date(v.starts_at), off)),
+            time: `${localTime(new Date(v.starts_at), off)} to ${localTime(new Date(v.ends_at), off)}`,
+            status: v.status, channel: v.patients?.wa_id ? "WhatsApp" : "Website", source: v.source,
+          }}
+        />
+      )}
     </>
   );
 }

@@ -138,3 +138,15 @@ export async function addPatient(v: { name: string; phone: string }): Promise<{ 
   refresh();
   return { id: data.id, existing: false };
 }
+
+// Booking dialog patient picker: name or phone digits, at most 8.
+export async function searchPatients(q: string): Promise<{ id: string; name: string | null; phone: string | null }[]> {
+  const { sb, clinic } = await desk();
+  const term = q.trim().replace(/[%,()]/g, "").slice(0, 40);
+  if (!clinic || term.length < 2) return [];
+  const digits = term.replace(/\D/g, "");
+  const { data } = await sb.from("patients").select("id, name, phone").eq("clinic_id", clinic.id)
+    .or(digits.length >= 3 ? `name.ilike.%${term}%,phone.ilike.%${digits}%,wa_id.ilike.%${digits}%` : `name.ilike.%${term}%`)
+    .order("name").limit(8);
+  return data ?? [];
+}
