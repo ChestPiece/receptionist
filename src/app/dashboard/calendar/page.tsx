@@ -13,8 +13,8 @@ const fmt = (f: Intl.DateTimeFormat, d: string) => f.format(new Date(`${d}T00:00
 export default async function Calendar({ searchParams }: PageProps<"/dashboard/calendar">) {
   const { sb, clinic: picked } = await desk();
   if (!picked) return null;
-  const clinic = await deskConfig(sb, picked.id);
-  const p = (await searchParams) as { v?: string; d?: string; dentist?: string; a?: string };
+  const [clinic, sp] = await Promise.all([deskConfig(sb, picked.id), searchParams]);
+  const p = sp as { v?: string; d?: string; dentist?: string; a?: string };
   const off = clinic.utc_offset_minutes;
   const today = localDate(new Date(), off);
   const view = p.v === "week" ? "week" : "day";

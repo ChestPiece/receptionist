@@ -19,6 +19,7 @@ const readex = Readex_Pro({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+  preload: false, // mono is only for small labels, so it loads when used instead of preloading on every page
 });
 
 // Newsreader is only for the "Receptionist Agent." wordmark (the .wordmark utility), never for UI text.

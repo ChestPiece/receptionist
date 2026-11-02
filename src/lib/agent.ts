@@ -1,14 +1,15 @@
 // The WhatsApp channel: the per-message handler around the shared agent brain (sara.ts).
 import { assistant, user, type AgentInputItem } from "@openai/agents";
 import type { Clinic } from "./clinics";
+import { splitChips } from "./chips";
 import { db, logMessages, logUsage } from "./db";
 import { reviewAndLog } from "./reviewer";
 import { emergencyReply, isEmergency, isStop, stopReply } from "./safety";
 import { runSara, wroteData } from "./sara";
 import { markRead, sendText, type IncomingMessage } from "./whatsapp";
 
-// ponytail: keep the last 10 patient turns, cut at a user message so no tool call loses its output. Summarize if long chats matter.
-export function trimHistory(items: AgentInputItem[], turns = 10) {
+// ponytail: keep the last 14 patient turns, cut at a user message so no tool call loses its output. Summarize if long chats matter.
+export function trimHistory(items: AgentInputItem[], turns = 14) {
   const starts = items.flatMap((it, i) => ("role" in it && it.role === "user" ? [i] : []));
   return starts.length > turns ? items.slice(starts[starts.length - turns]) : items;
 }
@@ -90,7 +91,7 @@ export async function appendHistory(patientId: string, items: AgentInputItem[], 
 
 // WhatsApp-safe punctuation: no en/em dashes (they read as machine-written). Hyphens in words stay.
 export const tidy = (text: string) =>
-  text
+  splitChips(text).text // a web-only chips marker must never reach WhatsApp
     .replace(/(\d(?:\s?[ap]m)?)\s*[–—]\s*(?=\d)/gi, "$1 to ")
     .replace(/\s*[–—]\s*/g, ", ")
     .replace(/ +- +/g, ", ");
@@ -99,6 +100,11 @@ const PAUSE_MS = 30 * 60_000;
 // ponytail: a staff pause lapses after 30 min without staff activity, so a missed handoff never leaves a dead chat. Phase 4 inbox refreshes it.
 export const stillPaused = (c: { bot_paused: boolean; updated_at: string } | null, now = new Date()) =>
   !!c?.bot_paused && now.getTime() - Date.parse(c.updated_at) < PAUSE_MS;
+
+// A pause that lapsed without a handback: tell Sara staff are gone, like the dashboard's handback marker.
+export const PAUSE_ENDED = "[Front desk] (pause ended)";
+export const lapseMarker = (c: { bot_paused: boolean; updated_at: string } | null, now = new Date()): AgentInputItem[] =>
+  c?.bot_paused && !stillPaused(c, now) ? [assistant(PAUSE_ENDED)] : [];
 
 // Patients often send one thought in pieces ("can you" / "book and" / "appointment"). Each piece is a processed_messages row.
 // After a short wait only the newest piece's call runs the model, and it answers every unanswered piece. Works across server instances.
@@ -215,8 +221,9 @@ export async function handleMessage(clinic: Clinic, msg: IncomingMessage) {
       return;
     }
     const t1 = Date.now();
+    const lapsed = lapseMarker(convo); // staff paused, never handed back, 30 min passed
     const [result] = await Promise.all([
-      runSara(clinic, patient, msg.from, [...saved, user(text)]),
+      runSara(clinic, patient, msg.from, [...saved, ...lapsed, user(text)]),
       convo?.bot_paused && sb.from("conversations").update({ bot_paused: false }).eq("patient_id", patient.id), // pause lapsed
     ]);
     const t2 = Date.now();

@@ -63,10 +63,8 @@ async function Settings() {
 }
 
 async function TestSara() {
-  const { sb, clinic } = await desk();
-  if (!clinic) return null;
-  const { data } = await sb.from("clinics").select("slug").eq("id", clinic.id).single();
-  return data?.slug ? <TestSaraLink slug={data.slug} /> : null;
+  const { clinic } = await desk();
+  return clinic?.slug ? <TestSaraLink slug={clinic.slug} /> : null;
 }
 
 async function NeedsStaff() {

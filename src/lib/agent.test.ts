@@ -1,8 +1,12 @@
 import { user, type AgentInputItem, type RunItem } from "@openai/agents";
 import { expect, test } from "vitest";
-import { capText, safeMediaUrl, sorry, stillPaused, tidy, trimHistory } from "./agent";
+import { capText, lapseMarker, safeMediaUrl, sorry, stillPaused, tidy, trimHistory } from "./agent";
 import { tooFar, wroteData } from "./sara";
 import { isEmergency } from "./safety";
+
+test("tidy drops a leaked web chips marker", () => {
+  expect(tidy("See you then!\n[[chips: Reschedule | Cancel]]")).toBe("See you then!");
+});
 
 test("trimHistory keeps the last N turns and starts at a user message", () => {
   const call = { type: "function_call", callId: "c", name: "find_slots", arguments: "{}" } as AgentInputItem;
@@ -61,4 +65,18 @@ test("the error reply only promises staff when staff get alerts", () => {
   expect(sorry("+971 4", null)).toContain("+971 4");
   expect(sorry(null, null)).not.toContain("null");
   expect(sorry("+971 4", "971500000000@c.us")).toMatch(/team member will reply/);
+});
+
+test("trimHistory keeps 14 turns by default", () => {
+  const items = Array.from({ length: 20 }, (_, i) => user(`m${i}`));
+  expect(trimHistory(items)).toHaveLength(14);
+});
+
+test("a lapsed pause leaves a front desk marker, a live or absent one does not", () => {
+  const now = new Date("2026-10-22T10:00:00Z");
+  expect(lapseMarker({ bot_paused: true, updated_at: "2026-10-22T09:00:00Z" }, now)).toHaveLength(1);
+  expect(JSON.stringify(lapseMarker({ bot_paused: true, updated_at: "2026-10-22T09:00:00Z" }, now))).toContain("[Front desk] (pause ended)");
+  expect(lapseMarker({ bot_paused: true, updated_at: "2026-10-22T09:45:00Z" }, now)).toEqual([]);
+  expect(lapseMarker({ bot_paused: false, updated_at: "2026-10-22T09:00:00Z" }, now)).toEqual([]);
+  expect(lapseMarker(null, now)).toEqual([]);
 });

@@ -22,10 +22,11 @@ WhatsApp AI receptionist for UAE dental clinics (Dubai first), English + Arabic.
 
 ## Commands
 ```bash
-npm run dev
-npm test        # vitest
-npm run lint
+bun run dev
+bun run test    # vitest
+bun run lint
 ```
+Package manager is **bun** (`bun.lock` only, no `package-lock.json`). Use `bun install` / `bunx`, not npm.
 
 ## Production
 - Vercel project `chestpieces-projects/clinic-whatsapp-bot`. Public URL: `https://sara-clinic-bot.vercel.app`, added as a project domain through the Vercel API. The default `*-chestpieces-projects.vercel.app` URLs sit behind Vercel deployment protection, which redirects with a 302, so UltraMsg cannot reach them.

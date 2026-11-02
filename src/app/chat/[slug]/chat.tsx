@@ -17,6 +17,7 @@ import { InputGroupAddon } from "@/components/ui/input-group";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { ThemeToggle } from "@/components/ledger";
+import { icsFor, splitChips, toolChips, type Chip } from "@/lib/chips";
 import { cn } from "@/lib/utils";
 import type { Service } from "@/lib/clinics";
 import { DAYS, type Hours } from "@/lib/slots";
@@ -186,7 +187,22 @@ function SidebarBody({ name, sample, logo, persona, info, phone }: SideProps) {
   );
 }
 
+// Starters, only on the empty chat. After that the chips follow the conversation (see chipsFor).
 const CHIPS = ["Book a visit", "Prices", "Opening hours", "My appointments", "Talk to the front desk"];
+
+// Chips for the newest assistant turn: the model's hidden marker line first, else what the tools just returned.
+function chipsFor(m: UIMessage, lastUserText: string): Chip[] {
+  const marked = splitChips(m.parts.map((p) => (p.type === "text" ? p.text : "")).join("")).chips;
+  return marked.length ? marked.map((label) => ({ label })) : toolChips(m.parts as Parameters<typeof toolChips>[0], /[؀-ۿ]/.test(lastUserText));
+}
+
+// "Add to calendar": a client-side .ics file, no server round trip.
+function downloadIcs(e: NonNullable<Chip["ics"]>) {
+  const url = URL.createObjectURL(new Blob([icsFor(e)], { type: "text/calendar" }));
+  const a = Object.assign(document.createElement("a"), { href: url, download: "dental-visit.ics" });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 // One anonymous id per browser, so Sara remembers the visitor between visits.
 function visitorId(test?: boolean) {
@@ -217,7 +233,8 @@ function ToolCard({ part, onPick, busy }: { part: DynamicToolUIPart; onPick: (te
     return <Shimmer className="text-sm">{part.toolName === "find_slots" ? "Checking free times…" : "One moment…"}</Shimmer>;
   const out = outputOf(part);
   if (!out) return null;
-  if (part.toolName === "find_slots" && "days" in out) return <SlotPicker slots={out as Slots} onPick={onPick} busy={busy} />;
+  // The no-service shape ({services}) has no top-level days: no picker for it.
+  if (part.toolName === "find_slots" && Array.isArray(out.days)) return <SlotPicker slots={out as Slots} onPick={onPick} busy={busy} />;
   if (part.toolName === "book" && "booked" in out) return <BookedCard booked={out as Booked} />;
   if (part.toolName === "my_appointments" && Array.isArray(out)) return <AppointmentList appts={out as Appt[]} />;
   return null;
@@ -327,7 +344,14 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, id, star
   const side = <SidebarBody name={name} sample={sample} logo={logo} persona={persona} info={info} phone={phone} />;
   const empty = messages.length === 0;
   const [typedAt, setTypedAt] = useState(-1); // message count when the visitor started typing: chips hide until the next message
-  const chips = !paused && !busy && typedAt !== messages.length && (empty ? greeted : messages.at(-1)?.role === "assistant");
+  const lastMsg = messages.at(-1);
+  const lastUserText = messages.findLast((m) => m.role === "user")?.parts.map((p) => (p.type === "text" ? p.text : "")).join("") ?? "";
+  const chips: Chip[] =
+    paused || busy || typedAt === messages.length
+      ? []
+      : empty
+        ? greeted ? CHIPS.map((label) => ({ label })) : []
+        : lastMsg?.role === "assistant" && !lastMsg.id.startsWith("s") ? chipsFor(lastMsg, lastUserText) : [];
   // Typing anywhere goes to the message box (the keystroke lands there because focus moves during keydown).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -424,11 +448,11 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, id, star
                       p.type === "text" ? (
                         m.role === "user" ? (
                           <MessageResponse key={i}>{p.text}</MessageResponse>
-                        ) : (
+                        ) : splitChips(p.text).text ? (
                           <Bubble key={i}>
-                            <MessageResponse>{p.text}</MessageResponse>
+                            <MessageResponse>{splitChips(p.text).text}</MessageResponse>
                           </Bubble>
-                        )
+                        ) : null
                       ) : p.type === "dynamic-tool" ? (
                         <ToolCard key={i} part={p} onPick={send} busy={busy} />
                       ) : null,
@@ -469,10 +493,10 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, id, star
         </Conversation>
 
         <div className="relative mx-auto flex w-full max-w-3xl flex-col gap-3 px-4 pb-4 pt-1 before:pointer-events-none before:absolute before:inset-x-0 before:-top-8 before:h-8 before:bg-gradient-to-t before:from-background before:to-transparent sm:px-6">
-          {chips && (
+          {chips.length > 0 && (
             <div className="flex flex-wrap gap-2">
-              {CHIPS.map((q) => (
-                <Suggestion key={q} suggestion={q} onClick={send} className="h-8 bg-card text-[13px]" />
+              {chips.map((c) => (
+                <Suggestion key={c.label} suggestion={c.label} onClick={(q) => (c.ics ? downloadIcs(c.ics) : send(q))} className="h-8 bg-card text-[13px]" />
               ))}
             </div>
           )}

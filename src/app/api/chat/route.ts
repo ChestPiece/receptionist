@@ -4,7 +4,8 @@ import { createAiSdkUiMessageStreamResponse } from "@openai/agents-extensions/ai
 import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 import { after } from "next/server";
 import { z } from "zod";
-import { appendHistory, capText, RATE_MAX, RATE_WINDOW_MS, slowDown, sorry, stillPaused, trimHistory } from "@/lib/agent";
+import { appendHistory, capText, lapseMarker, RATE_MAX, RATE_WINDOW_MS, slowDown, sorry, stillPaused, trimHistory } from "@/lib/agent";
+import { markerOf, splitChips } from "@/lib/chips";
 import { clinicBySlug } from "@/lib/clinics";
 import { db, logMessages, logUsage } from "@/lib/db";
 import { reviewAndLog } from "@/lib/reviewer";
@@ -81,8 +82,10 @@ export async function POST(req: Request) {
   const saved = trimHistory((convo?.history ?? []) as AgentInputItem[]);
   const paused = stillPaused(convo);
   // While staff own the chat, updated_at stays put so the 30-min pause can lapse (same as agent.ts).
+  // The transcript staff read never shows the hidden chips line; conversations.history keeps it so a reload can rebuild the chips.
   const save = async (items: AgentInputItem[], reply: string | undefined) => {
-    await logMessages(clinic.id, patient.id, "web", [{ role: "patient", body: text }, ...(reply ? [{ role: "assistant" as const, body: reply }] : [])]);
+    const shown = reply && splitChips(reply).text;
+    await logMessages(clinic.id, patient.id, "web", [{ role: "patient", body: text }, ...(shown ? [{ role: "assistant" as const, body: shown }] : [])]);
     await appendHistory(patient.id, items, !paused);
   };
 
@@ -100,13 +103,16 @@ export async function POST(req: Request) {
   }
 
   try {
-    const result = await streamSara(clinic, patient, [...saved, user(text)]);
+    // Staff paused the chat, never handed back, and 30 min passed: tell Sara they are gone (same as handleMessage).
+    const lapsed = lapseMarker(convo);
+    if (convo?.bot_paused) await sb.from("conversations").update({ bot_paused: false }).eq("patient_id", patient.id);
+    const result = await streamSara(clinic, patient, [...saved, ...lapsed, user(text)]);
     after(async () => {
       try {
         await result.completed;
         await logUsage(clinic.id, "web", result.state.usage);
         await save(result.history.slice(saved.length), result.finalOutput);
-        await reviewAndLog({ clinic, patientId: patient.id, channel: "web", userText: text, reply: result.finalOutput, items: result.newItems });
+        await reviewAndLog({ clinic, patientId: patient.id, channel: "web", userText: text, reply: result.finalOutput && splitChips(result.finalOutput).text, items: result.newItems });
       } catch (e) {
         console.error("[chat]", (e as Error).message);
       }
@@ -140,8 +146,13 @@ export async function GET(req: Request) {
   if (after) query = query.gt("id", after);
   const { data: rows } = await query;
   const data = after ? rows : rows?.reverse();
-  return Response.json({
-    paused: stillPaused(convo),
-    messages: (data ?? []).map((m) => ({ id: String(m.id), role: m.role, text: m.body, at: m.created_at })),
-  });
+  const messages = (data ?? []).map((m) => ({ id: String(m.id), role: m.role, text: m.body as string, at: m.created_at }));
+  // A reload: hand the newest reply back with its hidden chips line (kept in history, not in the transcript), so the client can show the chips again.
+  const lastRow = messages.at(-1);
+  if (!after && lastRow?.role === "assistant") {
+    const { data: h } = await sb.from("conversations").select("history").eq("patient_id", patient.id).maybeSingle();
+    const marker = markerOf((h?.history ?? []) as unknown[]);
+    if (marker) lastRow.text = [lastRow.text, marker].join("\n");
+  }
+  return Response.json({ paused: stillPaused(convo), messages });
 }

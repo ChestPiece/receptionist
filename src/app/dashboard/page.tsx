@@ -18,19 +18,19 @@ type Row = { id: string; service: string; starts_at: string; status: string; sou
 export default async function Today() {
   const { sb, clinic: picked } = await desk();
   if (!picked) return null;
-  const clinic = await deskConfig(sb, picked.id);
-  const off = clinic.utc_offset_minutes;
+  const off = picked.utc_offset_minutes;
   const today = localDate(new Date(), off);
   const utc = (d: string) => new Date(Date.parse(`${d}T00:00:00Z`) - off * 60_000).toISOString();
   const weekFrom = utc(weekStart(today));
   const dayEnd = new Date(Date.parse(utc(today)) + 86_400_000).toISOString();
 
-  const [{ data: visits }, { data: week }, { data: paused }] = await Promise.all([
+  const [{ data: visits }, { data: week }, { data: paused }, clinic] = await Promise.all([
     sb.from("appointments").select("id, service, starts_at, status, source, created_at, dentist_id, patient_id, patients!inner(name, phone, wa_id, is_test)")
-      .eq("patients.is_test", false).eq("clinic_id", clinic.id).neq("status", "cancelled").gte("starts_at", utc(today)).lt("starts_at", dayEnd).order("starts_at"),
-    sb.from("appointments").select("source, status, created_at, starts_at, patients!inner(is_test)").eq("patients.is_test", false).eq("clinic_id", clinic.id).or(`created_at.gte.${weekFrom},starts_at.gte.${weekFrom}`),
+      .eq("patients.is_test", false).eq("clinic_id", picked.id).neq("status", "cancelled").gte("starts_at", utc(today)).lt("starts_at", dayEnd).order("starts_at"),
+    sb.from("appointments").select("source, status, created_at, starts_at, patients!inner(is_test)").eq("patients.is_test", false).eq("clinic_id", picked.id).or(`created_at.gte.${weekFrom},starts_at.gte.${weekFrom}`),
     sb.from("conversations").select("patient_id, bot_paused, updated_at, patients!inner(clinic_id, name, phone, wa_id, is_test)")
-      .eq("patients.clinic_id", clinic.id).eq("patients.is_test", false).eq("bot_paused", true).order("updated_at", { ascending: false }),
+      .eq("patients.clinic_id", picked.id).eq("patients.is_test", false).eq("bot_paused", true).order("updated_at", { ascending: false }),
+    deskConfig(sb, picked.id),
   ]);
 
   const rows = (visits ?? []) as unknown as Row[];

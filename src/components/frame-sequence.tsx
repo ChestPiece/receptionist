@@ -9,7 +9,9 @@ export function frameAt(progress: number, count: number) {
   return Math.min(count - 1, Math.max(0, Math.round(progress * (count - 1))));
 }
 
-const frameUrl = (base: string, set: string, i: number) => `${base}/${set}/${String(i + 1).padStart(4, "0")}.webp`;
+const AHEAD = 20; // frames kept requested ahead of the current one
+const BEHIND = 10; // frames kept behind it, for scrubbing back
+const frameUrl =(base: string, set: string, i: number) => `${base}/${set}/${String(i + 1).padStart(4, "0")}.webp`;
 
 // Plays a pre-rendered WebP sequence (`${base}/lg/0001.webp` landscape, `${base}/pt/0001.webp` portrait) on a canvas, scrubbed by scroll.
 // No pin: by default the scrub runs while the canvas's parent crosses the viewport, from its top entering at the bottom
@@ -30,7 +32,7 @@ export function FrameSequence({ base, count, ptCount, className, start = "top bo
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const set = portrait ? "pt" : "lg";
     const n = portrait ? ptCount : count;
-    const frames: HTMLImageElement[] = [];
+    const frames: (HTMLImageElement | undefined)[] = [];
     let current = reduced ? n - 1 : 0;
 
     const draw = () => {
@@ -73,14 +75,29 @@ export function FrameSequence({ base, count, ptCount, className, start = "top bo
       return () => resize.disconnect();
     }
 
-    // Fetch the rest only once the canvas is within about one viewport.
+    // Sliding window: keep the next AHEAD frames requested and drop bitmaps far from the current frame, so the
+    // network and the decoded-image memory stay small. Dropped frames reload from the HTTP cache if scrolled back to.
+    let started = false;
+    const fill = () => {
+      if (!started) return;
+      for (let i = current; i < Math.min(n, current + AHEAD); i++) load(i);
+      for (let i = 0; i < frames.length; i++) {
+        if (frames[i] && (i < current - BEHIND || i > current + AHEAD * 2)) {
+          frames[i]!.onload = null;
+          frames[i] = undefined;
+        }
+      }
+    };
+
+    // Start fetching only once the canvas is within half a viewport of the screen (the pin starts when it reaches the top).
     const near = new IntersectionObserver(
       (entries) => {
         if (!entries.some((e) => e.isIntersecting)) return;
         near.disconnect();
-        for (let i = 0; i < n; i++) load(i);
+        started = true;
+        fill();
       },
-      { rootMargin: "100% 0px" },
+      { rootMargin: "0px 0px 50% 0px" },
     );
     near.observe(canvas);
 
@@ -94,6 +111,7 @@ export function FrameSequence({ base, count, ptCount, className, start = "top bo
         const next = frameAt(state.p, n);
         if (next === current) return;
         current = next;
+        fill();
         draw();
       },
     });

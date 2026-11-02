@@ -1,6 +1,6 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import type { Clinic } from "./clinics";
-import { buildInstructions } from "./sara";
+import { bookMany, buildInstructions } from "./sara";
 
 const clinic: Clinic = {
   id: "c1",
@@ -46,4 +46,39 @@ test("the prompt tells Sara how to read staff messages and web visits", () => {
   const p = buildInstructions(clinic, null, null, new Date("2026-10-30T05:00:00Z"));
   expect(p).toContain("[Front desk]");
   expect(p).toContain("booked in this chat");
+});
+
+const visit = (service: string, visit_for: string | null = null) => ({ service, date: "2026-11-03", time: "13:45", dentist: null, visit_for });
+const ok = async (v: { service: string }) => ({ booked: true, service: v.service });
+
+test("book_many books every agreed visit in one call and keeps visit_for", async () => {
+  const one = vi.fn(ok);
+  const r = await bookMany([visit("Check-up"), visit("Filling"), visit("Check-up", "Sam")], 3, one);
+  expect(one).toHaveBeenCalledTimes(3);
+  expect(r.map((x) => x.booked)).toEqual([true, true, true]);
+  expect(r[2].visit_for).toBe("Sam");
+});
+
+test("book_many reports a failed visit and still books the rest", async () => {
+  const one = async (v: { service: string }) => (v.service === "Filling" ? "That slot was just taken." : ok(v));
+  const r = await bookMany([visit("Check-up"), visit("Filling"), visit("Check-up")], 3, one);
+  expect(r.map((x) => x.booked)).toEqual([true, false, true]);
+  expect(r[1]).toMatchObject({ booked: false, error: "That slot was just taken." });
+});
+
+test("book_many stops at the upcoming-visit limit without calling book", async () => {
+  const one = vi.fn(ok);
+  const r = await bookMany([visit("a"), visit("b"), visit("c")], 1, one);
+  expect(one).toHaveBeenCalledTimes(1);
+  expect(r.map((x) => x.booked)).toEqual([true, false, false]);
+  expect(r[1].error).toMatch(/upcoming visits/);
+});
+
+test("the prompt makes Sara finish every agreed visit in one turn", () => {
+  const p = buildInstructions(clinic, null, null, new Date("2026-10-30T05:00:00Z"));
+  expect(p).toContain("book_many");
+  expect(p).toContain("never end your turn");
+  expect(p).toContain("restate the pending plan");
+  expect(p).toContain("service null");
+  expect(p).toMatch(/name and mobile number together/);
 });

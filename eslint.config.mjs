@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Agent worktrees (each has its own .next) and video sources are not app code.
+    ".claude/**",
+    "motion/**",
     // Vendored by the shadcn / AI Elements CLIs; updated with the CLI, not by hand.
     "src/components/ui/**",
     "src/components/ai-elements/**",

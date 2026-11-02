@@ -1,7 +1,7 @@
 "use client";
 
-// Client pieces of the landing page: nav, night hero with its demo (English / Arabic), the pinned night film,
-// how it works, the WebGL waves and scroll reveals.
+// Client pieces of the landing page: nav, the hero demo (English / Arabic), the pinned night film,
+// how it works, the WebGL waves and scroll reveals. The static hero shell and Horizon are server components in landing-hero.tsx.
 import Link from "next/link";
 import { ArrowRightIcon, CheckIcon, RotateCcwIcon } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
@@ -144,96 +144,6 @@ export function Nav({ demo }: { demo: string }) {
   );
 }
 
-// The hero entrance is CSS (.rise / .fade-up in globals.css): it plays from first paint, with no wait for hydration.
-const delay = (ms: number) => ({ "--d": `${ms}ms` }) as CSSProperties;
-
-export function Hero({ demo }: { demo: string }) {
-  return (
-    <section
-      data-night
-      aria-labelledby="hero-title"
-      className="night relative isolate z-[1] overflow-clip lg:flex lg:min-h-[min(100svh,56rem)] lg:items-center"
-    >
-      {/* Quiet zone: the waves drop to 22% under the copy so the lead keeps its contrast. */}
-      <NightWaves
-        when="idle"
-        spacing={10}
-        opacity={0.65}
-        speed={0.25}
-        direction={20}
-        fade="edges"
-        fadeSize={0.9}
-        cursorSize={60}
-        cursorStrength={0.5}
-        className="absolute inset-0 -z-20 [mask-image:linear-gradient(to_bottom,rgb(0_0_0/0.22)_0_45%,#000_75%)] lg:[mask-image:linear-gradient(to_right,rgb(0_0_0/0.22)_0_30%,#000_62%)]"
-      />
-      <Horizon />
-      <div className="mx-auto grid w-full max-w-6xl grid-cols-1 items-center gap-14 px-4 pt-28 pb-32 sm:px-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] lg:gap-18 lg:pt-24 lg:pb-36">
-        <div>
-          <p
-            style={delay(0)}
-            className="fade-up inline-flex items-center gap-2 rounded-full border bg-card px-3 py-1 text-xs text-muted-foreground"
-          >
-            <span className="size-1.5 rounded-full bg-success" /> For dental
-            clinics in the UAE
-          </p>
-          <h1
-            id="hero-title"
-            className="mt-6 font-display text-display tracking-[-0.025em]"
-          >
-            <span className="block overflow-clip pb-[0.14em] -mb-[0.08em]">
-              <span style={delay(80)} className="rise block">
-                Closed for the night.
-              </span>
-            </span>{" "}
-            <span className="block overflow-clip pb-[0.14em] -mb-[0.08em]">
-              <span style={delay(170)} className="rise block text-primary">
-                Still taking bookings.
-              </span>
-            </span>
-          </h1>
-          <p
-            style={delay(320)}
-            className="fade-up mt-5 max-w-[42ch] text-lead text-pretty text-muted-foreground"
-          >
-            Sara is your clinic&apos;s AI receptionist on WhatsApp and your
-            website. She books, moves and cancels visits in English and Arabic
-            while the front desk is dark.
-          </p>
-          <div style={delay(400)} className="fade-up mt-8 flex flex-wrap gap-3">
-            <Button asChild size="lg" className="max-sm:flex-1 max-sm:basis-44">
-              <Link href={demo}>
-                Try the demo <ArrowRightIcon className="size-4" />
-              </Link>
-            </Button>
-            <Button
-              asChild
-              size="lg"
-              variant="outline"
-              className="bg-transparent max-sm:flex-1 max-sm:basis-44"
-            >
-              <a href="#how">See how it works</a>
-            </Button>
-          </div>
-        </div>
-        <div style={delay(480)} className="fade-up">
-          <HeroConversation />
-        </div>
-      </div>
-    </section>
-  );
-}
-
-// First light at the edge of a night surface (dawn glow + hairline). `top` mirrors it, for the close band.
-export function Horizon({ top }: { top?: boolean }) {
-  return (
-    <div aria-hidden className="horizon" data-top={top || undefined}>
-      <div className="horizon-air" />
-      <div className="horizon-line" />
-    </div>
-  );
-}
-
 // WebGL dots on a night surface, imported after first paint ("idle") or near the viewport ("near"), so ogl stays out of
 // the first-load bundle. A plain import() rather than next/dynamic, whose loader would add to that bundle. Reduced motion and no WebGL2 leave the plain night surface and the horizon.
 export function NightWaves({
@@ -260,11 +170,8 @@ export function NightWaves({
         }),
       );
     if (when === "idle") {
-      if ("requestIdleCallback" in window) {
-        const id = window.requestIdleCallback(show, { timeout: 1500 });
-        return () => window.cancelIdleCallback(id);
-      }
-      const id = setTimeout(show, 300);
+      // Wait ~2.5 s so ogl's parse and the WebGL context never compete with the hero entrance, the first frames and hydration.
+      const id = setTimeout(show, 2500);
       return () => clearTimeout(id);
     }
     const io = new IntersectionObserver(
@@ -477,10 +384,11 @@ const SCRIPT = {
   },
 };
 
-// Beat times in ms. Each beat reveals one more line of the conversation.
-const BEATS = [400, 1100, 2100, 3600, 4300, 5300, 6600, 7300, 8200];
+// Beat times in ms. Each beat reveals one more line of the conversation. The first line is in the server HTML (Replay
+// starts at 1), so it shows from first paint instead of after hydration.
+const BEATS = [0, 1100, 2100, 3600, 4300, 5300, 6600, 7300, 8200];
 
-function HeroConversation() {
+export function HeroConversation() {
   const [lang, setLang] = useState<Lang>("en");
   const [run, setRun] = useState(0);
   return (
@@ -539,11 +447,11 @@ function HeroConversation() {
 
 function Replay({ lang }: { lang: Lang }) {
   const reduce = useReducedMotion();
-  const [at, setAt] = useState(0);
+  const [at, setAt] = useState(1);
   useEffect(() => {
     // Reduced motion jumps to the end. Done here, not in render, so server and client HTML match.
     const timers = BEATS.map((ms, i) =>
-      setTimeout(() => setAt(i + 1), reduce ? 0 : ms),
+      setTimeout(() => setAt(i + 1), reduce ? 0 : ms), // BEATS[0] = 0 re-sets the initial 1
     );
     return () => timers.forEach(clearTimeout);
   }, [reduce]);
@@ -787,18 +695,18 @@ function TicketFace({ confirmed }: { confirmed?: boolean }) {
   );
 }
 
-// Fades [data-reveal] blocks up as they scroll in. Reduced motion leaves them in place.
+// Fades [data-reveal] blocks up as they scroll in. Their hidden start state is CSS (`html.reveals`, globals.css), so
+// nothing flashes before hydration. Reduced motion leaves them in place.
 export function Reveals() {
   useGSAP(() => {
     const mm = gsap.matchMedia();
     mm.add("(prefers-reduced-motion: no-preference)", () => {
-      gsap.set("[data-reveal]", { autoAlpha: 0, y: 16 });
       ScrollTrigger.batch("[data-reveal]", {
         start: "top 88%",
         once: true,
         onEnter: (els) =>
           gsap.to(els, {
-            autoAlpha: 1,
+            opacity: 1,
             y: 0,
             duration: 0.6,
             stagger: 0.07,

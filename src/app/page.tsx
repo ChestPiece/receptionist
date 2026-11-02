@@ -1,6 +1,7 @@
 import { ArrowRightIcon, CheckIcon } from "lucide-react";
 import Link from "next/link";
-import { Hero, Horizon, HowItWorks, Nav, NightFilm, NightWaves, Reveals } from "@/components/landing";
+import { HowItWorks, Nav, NightFilm, NightWaves, Reveals } from "@/components/landing";
+import { Hero, Horizon } from "@/components/landing-hero";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -118,6 +119,8 @@ export default function Home() {
   // `.day`: the landing body is morning in both themes; night surfaces carry their own `.night` scope.
   return (
     <div className="day min-h-dvh">
+      {/* Arms the CSS-hidden start state of [data-reveal] before first paint (see globals.css); with JS off nothing is hidden. */}
+      <script dangerouslySetInnerHTML={{ __html: 'document.documentElement.classList.add("reveals")' }} />
       <Nav demo={DEMO} />
       <Hero demo={DEMO} />
       <NightFilm />

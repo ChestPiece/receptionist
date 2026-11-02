@@ -9,7 +9,7 @@ import { roleOf, type Role } from "./role";
 import { supabaseServer } from "./supabase/server";
 import { DAYS, localDate, localTime, type Hours } from "./slots";
 
-export type DeskClinic = { id: string; name: string; hours: Hours; utc_offset_minutes: number; phone: string | null; staff_whatsapp: string | null; role: Role };
+export type DeskClinic = { id: string; name: string; slug: string | null; hours: Hours; utc_offset_minutes: number; phone: string | null; staff_whatsapp: string | null; role: Role };
 export const CLINIC_COOKIE = "desk_clinic";
 export const ACTIVITY_SEEN_COOKIE = "activity_seen";
 
@@ -17,12 +17,13 @@ export const ACTIVITY_SEEN_COOKIE = "activity_seen";
 export const desk = cache(async () => {
   await connection(); // the session check reads the clock (token expiry), so render at request time
   const sb = await supabaseServer();
-  const { data: claims } = await sb.auth.getClaims();
-  if (!claims?.claims) redirect("/login");
-  const [{ data }, { data: mine }] = await Promise.all([
-    sb.from("clinics").select("id, name, hours, utc_offset_minutes, phone, staff_whatsapp").order("name"),
+  // Claims run alongside the queries (proxy.ts already refreshed the session); RLS returns nothing for a signed-out user and we redirect below.
+  const [{ data: claims }, { data }, { data: mine }] = await Promise.all([
+    sb.auth.getClaims(),
+    sb.from("clinics").select("id, name, slug, hours, utc_offset_minutes, phone, staff_whatsapp").order("name"),
     sb.from("memberships").select("clinic_id, role"),
   ]);
+  if (!claims?.claims) redirect("/login");
   const clinics = (data ?? []).map((c) => ({ ...c, role: roleOf(mine ?? [], c.id) })) as DeskClinic[];
   const picked = (await cookies()).get(CLINIC_COOKIE)?.value;
   const clinic = clinics.find((c) => c.id === picked) ?? clinics[0] ?? null;
