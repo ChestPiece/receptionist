@@ -242,7 +242,7 @@ export async function handleMessage(clinic: Clinic, msg: IncomingMessage) {
       appendHistory(patient.id, result.history.slice(saved.length), true), // this run's turns only
     ]);
     // Already inside the webhook's after(); the reviewer never throws and the reply is out.
-    await reviewAndLog({ clinic, patientId: patient.id, channel: "whatsapp", userText: text, reply, items: result.newItems });
+    await reviewAndLog({ clinic, patientId: patient.id, channel: "whatsapp", userText: text, reply, items: result.newItems, earlier: saved });
   } catch (e) {
     console.error("[agent]", (e as Error).message);
     await answered(); // don't replay failed pieces into the next message

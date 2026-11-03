@@ -6,12 +6,14 @@ import { db } from "./db";
 import { bookingSource, bookVisit, cancelVisit, firstDays, isAway, moveVisit, record, search, HORIZON_DAYS, tooFar, type BookResult } from "./booking";
 import { logEvent, visitSummary } from "./events";
 import { DAYS, localDate, localTime, spreadSlots } from "./slots";
+import { normUaePhone } from "./phone";
 import { sendText } from "./whatsapp";
 
 const MAX_UPCOMING = 3; // upcoming visits per patient
 
-// waId null = web chat visitor.
-type Ctx = { clinic: Clinic; patientId: string; patientName: string | null; patientPhone: string | null; waId: string | null };
+// The channel is explicit: a voice caller will have a number but no WhatsApp id. waId is set only on WhatsApp.
+export type Channel = "whatsapp" | "web";
+type Ctx = { clinic: Clinic; channel: Channel; patientId: string; patientName: string | null; patientPhone: string | null; waId: string | null };
 type Patient = { id: string; name: string | null; phone?: string | null };
 type Rc = RunContext<Ctx> | undefined;
 
@@ -104,14 +106,37 @@ const findSlots = tool({
   },
 });
 
+// "its chest piece" / "my name is ali khan" -> "Chest Piece" / "Ali Khan".
+export function cleanName(raw: string) {
+  const s = raw.trim().replace(/^(?:(?:hi|hello|hey)[,!.\s]+)?(?:it'?s|i am|i'm|im|my name is|my name's|name is|name:|this is)\s+/i, "").replace(/[.,!]+$/, "").trim();
+  return s.replace(/\S+/g, (w) => (/[a-z]/i.test(w[0]) ? w[0].toUpperCase() + w.slice(1).toLowerCase() : w)).slice(0, 80) || null;
+}
+
+// Digits only: a UAE mobile as 9715XXXXXXXX, any other number as typed digits (a foreign number is still a lead).
+export const cleanPhone = (raw: string) => normUaePhone(raw) ?? (raw.replace(/\D/g, "").length >= 7 ? raw.replace(/\D/g, "").slice(0, 15) : null);
+
+// Save the visitor's name/number on their patient row the moment they give it. Fills only empty fields:
+// a later booking "for my son" must not rename the account holder. Updates ctx so later tools and the prompt see it.
+async function fillContact(ctx: Ctx, name: string | null | undefined, phone: string | null | undefined) {
+  const n = name ? cleanName(name) : null;
+  const p = phone ? cleanPhone(phone) : null;
+  const fill = { ...(n && !ctx.patientName ? { name: n } : {}), ...(p && !ctx.patientPhone ? { phone: p } : {}) };
+  if (!Object.keys(fill).length) return fill;
+  const { error } = await db().from("patients").update(fill).eq("id", ctx.patientId);
+  if (error) throw error;
+  if (fill.name) ctx.patientName = fill.name;
+  if (fill.phone) ctx.patientPhone = fill.phone;
+  return fill;
+}
+
 type Args = { service: string; date: string; time: string; dentist: string | null; visit_for: string | null; patient_name: string | null; patient_phone: string | null };
 
 // Book one visit. Returns the booked result or a message for the model. The upcoming-visit cap is the caller's job.
 // ponytail: appointments has no note column, so visit_for only comes back in the tool result (no migration allowed here).
 async function bookOne(ctx: Ctx, { service: name, date, time, patient_name, patient_phone, dentist: dName, visit_for }: Args) {
-  const { clinic, patientId, patientName, patientPhone, waId } = ctx;
+  const { clinic, patientId } = ctx;
   // A web visitor is anonymous: the clinic needs a number to reach them.
-  if (!waId && !patientPhone && !patient_phone) return "Ask for the patient's mobile number first, then call book again with patient_phone.";
+  if (ctx.channel === "web" && !ctx.patientPhone && !patient_phone) return "Ask for the patient's mobile number first, then call book again with patient_phone.";
   const service = findService(clinic, name);
   if (!service) return UNKNOWN_SERVICE(clinic);
   const dentist = dName ? findDentist(clinic, dName) : null;
@@ -119,9 +144,7 @@ async function bookOne(ctx: Ctx, { service: name, date, time, patient_name, pati
   const { data: convo } = await db().from("conversations").select("followup_sent_at").eq("patient_id", patientId).maybeSingle();
   const r = await bookVisit(db(), clinic, { patientId, serviceId: service.id, date, time, dentistId: dentist?.id, source: bookingSource(convo?.followup_sent_at ?? null, new Date()), actor: "sara" });
   if (!r.ok) return why(r, clinic, date);
-  // Keep the name on file: a later booking "for my son" must not rename the account holder.
-  const fill = { ...(patient_name && !patientName ? { name: patient_name } : {}), ...(patient_phone && !patientPhone ? { phone: patient_phone } : {}) };
-  if (Object.keys(fill).length) await db().from("patients").update(fill).eq("id", patientId);
+  await fillContact(ctx, patient_name, patient_phone);
   return { booked: true, id: r.id, service: service.name, date, time, ...(visit_for ? { visit_for } : {}), ...dentistName(clinic, r.dentistId), address: clinic.address, maps_url: clinic.maps_url };
 }
 
@@ -195,7 +218,7 @@ const myAppointments = tool({
   async execute(_args, rc: Rc) {
     const ctx = rc!.context;
     const list = await upcoming(ctx);
-    const note = ctx.waId ? "" : " (web chat: only visits booked in this chat are shown)";
+    const note = ctx.channel !== "web" ? "" : " (web chat: only visits booked in this chat are shown)";
     return list.length ? JSON.stringify(list) + note : `No upcoming appointments${note || "."}`;
   },
 });
@@ -254,14 +277,16 @@ const handoff = tool({
     callback_phone: z.string().nullable().describe("Web chat only: the patient's mobile number for staff to call back"),
   }),
   async execute({ reason, callback_phone }, rc: Rc) {
-    const { patientId, patientName, patientPhone, waId, clinic } = rc!.context;
+    const ctx = rc!.context;
+    await fillContact(ctx, null, callback_phone); // a handoff lead keeps its callback number
+    const { patientId, patientName, patientPhone, waId, clinic } = ctx;
     // Staff reply from the dashboard inbox on both channels; the pause lapses after 30 min.
     const { error } = await db().from("conversations").upsert({ patient_id: patientId, bot_paused: true, updated_at: new Date().toISOString() });
     if (error) throw error;
     await logEvent(db(), { clinicId: clinic.id, patientId, actor: "sara", kind: "handoff", level: "warn", summary: `Handed ${patientName ?? "a chat"} to staff: ${reason}` });
     const staff = clinic.staff_whatsapp;
     if (staff && clinic.wa) {
-      const phone = callback_phone || patientPhone;
+      const phone = patientPhone || callback_phone;
       await sendText(clinic.wa, staff, waId
         ? `Bot handoff: ${waId.replace("@c.us", "")}: ${reason}`
         : `Web chat handoff: ${patientName ?? "visitor"}${phone ? ` ${phone}` : ""}: ${reason}`);
@@ -270,9 +295,26 @@ const handoff = tool({
   },
 });
 
+const saveContact = tool({
+  name: "save_contact",
+  description: "Web chat: save the visitor's name and/or mobile number the moment they give them, before anything else. Pass only the person's name (no 'it's' or 'my name is').",
+  parameters: z.object({
+    patient_name: z.string().nullable().describe("The person's full name only, e.g. 'Chest Piece', not 'its chest piece'"),
+    patient_phone: z.string().nullable().describe("Mobile number as typed"),
+  }),
+  async execute({ patient_name, patient_phone }, rc: Rc) {
+    const ctx = rc!.context;
+    if (!patient_name && !patient_phone) return "Nothing to save. Call save_contact only with a name or number the patient sent.";
+    const fill = await fillContact(ctx, patient_name, patient_phone);
+    if (Object.keys(fill).length)
+      await logEvent(db(), { clinicId: ctx.clinic.id, patientId: ctx.patientId, actor: "sara", kind: "contact", summary: `Got contact: ${[ctx.patientName, ctx.patientPhone].filter(Boolean).join(" · ")}` });
+    return { saved: true, name: ctx.patientName, phone: ctx.patientPhone };
+  },
+});
+
 // Static rules first, per-minute and per-patient lines last, so OpenAI prompt caching can reuse the long prefix.
-export function buildInstructions(c: Clinic, patientName: string | null, waId: string | null, now: Date) {
-  const web = !waId;
+export function buildInstructions(c: Clinic, patientName: string | null, channel: Channel, now: Date, patientPhone: string | null = null) {
+  const web = channel === "web";
   const today = localDate(now, c.utc_offset_minutes);
   const weekday = DAYS[new Date(`${today}T00:00:00Z`).getUTCDay()];
   const services = active(c).map(({ name, name_ar, minutes, price_aed }) => ({ name, name_ar, minutes, price_aed }));
@@ -293,13 +335,18 @@ How you talk
 - Say dates and times like a person: "tomorrow at 4 pm", "Thu 22 Oct, 11:45 am". Tools use YYYY-MM-DD and 24h HH:MM.
 - At most one emoji, only in a greeting or thank-you. Never say "successfully", "processed", "as an AI" or "valued patient".
 - If asked whether you are a bot or a person: say honestly you are ${personaName(c)}, the clinic's virtual assistant, and a team member can join if they prefer.${web ? `
-- Quick replies: end every reply with one last line [[chips: a | b | c]]. It is a hidden marker the chat turns into tap buttons, so never mention it. 0 to 4 chips, up to 3 words each, in the patient's language, each worded as the patient would say it next (e.g. [[chips: Tomorrow | This week | Cheapest]]). Write [[chips: ]] with nothing inside when you ask for their name or mobile number, or when the chat already shows buttons (free times, booking card, visit list).` : ""}
+- Quick replies: end every reply with one last line [[chips: a | b | c]]. It is a hidden marker the chat turns into tap buttons, so never mention it. 0 to 4 chips, up to 3 words each, in the patient's language, each worded as the patient would say it next. Pick them for the question you just asked:
+  - which service: up to 4 service names from the clinic info, e.g. [[chips: Check-up | Cleaning | Toothache visit]]
+  - which day: [[chips: Earliest | Tomorrow | This week | Saturday]] (real upcoming days the clinic is open)
+  - confirming a booking: [[chips: Yes, book it | Change time]]
+  - after answering a question: the likely next step, e.g. [[chips: Book a visit | Opening hours]]
+  - asking for their name or mobile number, or when the chat already shows buttons (free times, booking card, visit list): [[chips: ]] with nothing inside.` : ""}
 
 Booking
 - Know the service and the day(s), then call find_slots once with every day the patient mentioned. No day given yet: ask which day suits them. If they just want the soonest time ("earliest", "any day"), call find_slots with earliest true.
 - If they ask what is free before naming a service, call find_slots with service null, show the first free days per service in a short plain list (the buttons only cover one service), then ask which service.
 - ${web ? 'The chat shows the times from find_slots as tappable buttons, so do not list them again. Say one short line like "Here are the free times, which works for you?".' : 'Offer the times as a short numbered list, then "Which works for you?".'} The patient may answer with a number, a time ("the 4 pm one") or a new preference; understand any of these.
-- If the name is not on file, ask for it before booking.${web ? " On the web, as soon as the patient shows booking intent, ask for their name and mobile number together in one message (skip what you already have) and pass the number as patient_phone." : ""} Then confirm everything in one line, e.g. "Filling, *Thu 22 Oct at 4 pm*, under Anas Altaf. Shall I book it?" Call book only after a yes.
+- If the name is not on file, ask for it before booking.${web ? " On the web, as soon as the patient shows booking intent, ask for their name and mobile number together in one message (skip what you already have). The moment they send a name or number, call save_contact with it (the name alone, without filler like it's or my name is), then carry on. Once they picked a time from the buttons, never call find_slots again: get the missing details, then confirm." : ""} Then confirm everything in one line, e.g. "Filling, *Thu 22 Oct at 4 pm*, under Anas Altaf. Shall I book it?" Call book only after a yes.
 - Several visits (a family, or a check-up plus a filling): collect and confirm them all, then after one yes call book_many with every visit (or book once per visit). Put a child's or relative's name in visit_for. Book ALL agreed visits in the same turn and never end your turn while an agreed visit is still unbooked. Only after the last result, write ONE combined confirmation (each date, time, who it is for, the address). If one failed, say which and offer other times in that same message.
 - After booking: a short confirmation with the date, time and address, and that they can message here to change it.
 ${web ? "- my_appointments shows only visits booked in this chat. Visits booked elsewhere (by phone, WhatsApp or at the desk) do not show. If the visitor asks about one, say the front desk will help and call handoff_to_staff; never link a visit by a phone number the visitor types.\n" : ""}- Reschedule or cancel: call my_appointments first. Before cancelling, confirm and offer once to move it instead. After cancelling, keep it short and kind.
@@ -330,13 +377,13 @@ Clinic info
 ${JSON.stringify(info)}
 
 Today is ${weekday} ${today}, local time ${localTime(now, c.utc_offset_minutes)}.
-Patient: ${patientName ? `${patientName} (name on file, do not ask again)` : "name not on file yet"}.`;
+Patient: ${patientName ? `${patientName} (name on file, do not ask again)` : "name not on file yet"}${web ? (patientPhone ? `, mobile ${patientPhone} on file (do not ask again)` : ", mobile not on file yet") : ""}.`;
 }
 
 const receptionist = new Agent<Ctx>({
   name: "Receptionist",
-  instructions: ({ context }) => buildInstructions(context.clinic, context.patientName, context.waId, new Date()),
-  tools: [findSlots, book, bookManyTool, myAppointments, cancel, reschedule, confirmVisit, handoff],
+  instructions: ({ context }) => buildInstructions(context.clinic, context.patientName, context.channel, new Date(), context.patientPhone),
+  tools: [findSlots, saveContact, book, bookManyTool, myAppointments, cancel, reschedule, confirmVisit, handoff],
 }); // Model: SDK default; override with OPENAI_DEFAULT_MODEL.
 
 export { tooFar };
@@ -346,7 +393,7 @@ const WRITES = new Set(["book", "book_many", "cancel", "reschedule", "confirm_vi
 export const wroteData = (items: RunItem[]) =>
   items.some((i) => i.type === "tool_call_item" && "name" in i.rawItem && WRITES.has(i.rawItem.name));
 
-const ctx = (clinic: Clinic, p: Patient, waId: string | null): Ctx => ({ clinic, patientId: p.id, patientName: p.name, patientPhone: p.phone ?? null, waId });
+const ctx = (clinic: Clinic, p: Patient, waId: string | null): Ctx => ({ clinic, channel: waId ? "whatsapp" : "web", patientId: p.id, patientName: p.name, patientPhone: p.phone ?? null, waId });
 
 export const runSara = (clinic: Clinic, patient: Patient, waId: string | null, input: AgentInputItem[]) =>
   run(receptionist, input, { context: ctx(clinic, patient, waId) });

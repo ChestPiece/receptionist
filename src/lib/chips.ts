@@ -24,6 +24,9 @@ export function markerOf(history: unknown[]) {
   return "";
 }
 
+// The reply has a chips marker, even an empty one ([[chips: ]] = Sara chose no chips on purpose).
+export const hasMarker = (raw: string) => /\[\[chips:/i.test(raw);
+
 export type IcsEvent = { service: string; date: string; time: string; address?: string | null };
 export type Chip = { label: string; ics?: IcsEvent };
 type Part = { type: string; toolName?: string; state?: string; output?: unknown };
@@ -45,7 +48,13 @@ const AR: Record<string, string> = {
   "Book another visit": "حجز موعد آخر",
   Reschedule: "تغيير الموعد",
   "Cancel a visit": "إلغاء موعد",
+  "Book a visit": "حجز موعد",
+  Prices: "الأسعار",
+  "Talk to the front desk": "التحدث مع الاستقبال",
 };
+
+// Safety net when Sara forgot the marker line entirely: the bar never goes blank by accident.
+export const fallbackChips = (ar: boolean): Chip[] => ["Book a visit", "Prices", "Talk to the front desk"].map((l) => ({ label: ar ? AR[l] : l }));
 
 // Fallback chips from the newest finished tool call in the last assistant message.
 export function toolChips(parts: Part[], ar: boolean): Chip[] {

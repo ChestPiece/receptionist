@@ -17,7 +17,7 @@ import { InputGroupAddon } from "@/components/ui/input-group";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { ThemeToggle } from "@/components/ledger";
-import { icsFor, splitChips, toolChips, type Chip } from "@/lib/chips";
+import { fallbackChips, hasMarker, icsFor, splitChips, toolChips, type Chip } from "@/lib/chips";
 import { cn } from "@/lib/utils";
 import type { Service } from "@/lib/clinics";
 import { DAYS, type Hours } from "@/lib/slots";
@@ -190,10 +190,17 @@ function SidebarBody({ name, sample, logo, persona, info, phone }: SideProps) {
 // Starters, only on the empty chat. After that the chips follow the conversation (see chipsFor).
 const CHIPS = ["Book a visit", "Prices", "Opening hours", "My appointments", "Talk to the front desk"];
 
-// Chips for the newest assistant turn: the model's hidden marker line first, else what the tools just returned.
+// Chips for the newest assistant turn: what a card the tools just drew needs first (the model tends to repeat the
+// slot days as chips), else the model's hidden marker line, else (no marker at all) a few safe defaults.
+// An empty marker means Sara wants no chips (asking for a name, say).
 function chipsFor(m: UIMessage, lastUserText: string): Chip[] {
-  const marked = splitChips(m.parts.map((p) => (p.type === "text" ? p.text : "")).join("")).chips;
-  return marked.length ? marked.map((label) => ({ label })) : toolChips(m.parts as Parameters<typeof toolChips>[0], /[؀-ۿ]/.test(lastUserText));
+  const raw = m.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
+  const ar = /[؀-ۿ]/.test(lastUserText);
+  const tools = toolChips(m.parts as Parameters<typeof toolChips>[0], ar);
+  if (tools.length) return tools;
+  const marked = splitChips(raw).chips;
+  if (marked.length) return marked.map((label) => ({ label }));
+  return raw.trim() && !hasMarker(raw) ? fallbackChips(ar) : [];
 }
 
 // "Add to calendar": a client-side .ics file, no server round trip.
@@ -502,7 +509,7 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, id, star
           )}
           <PromptInput
             onSubmit={({ text }) => void send(text)}
-            className="[&_[data-slot=input-group]]:rounded-2xl [&_[data-slot=input-group]]:bg-card [&_[data-slot=input-group]]:shadow-sm"
+            className="[&_[data-slot=input-group]]:h-auto [&_[data-slot=input-group]]:items-end [&_[data-slot=input-group]]:rounded-2xl[&_[data-slot=input-group]]:bg-card [&_[data-slot=input-group]]:shadow-sm"
           >
             <PromptInputBody>
               <PromptInputTextarea dir="auto" onChange={() => setTypedAt(messages.length)} placeholder={`Message ${persona}…`} rows={1} className="min-h-0 py-3.5 ps-4" />

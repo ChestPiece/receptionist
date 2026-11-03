@@ -23,13 +23,16 @@ const Body = z.object({
   message: z.object({ role: z.literal("user"), parts: z.array(z.object({ type: z.string(), text: z.string().optional() })) }),
 });
 
+// Fixed replies carry an empty chips marker, so the chat shows no fallback chips under them (e.g. after an emergency reply).
+const quiet = (text: string) => `${text}\n[[chips: ]]`;
+
 // A fixed reply in the same stream format, for answers the model must not write (emergency, rate limit, errors).
 const fixed = (text: string) =>
   createUIMessageStreamResponse({
     stream: createUIMessageStream({
       execute: ({ writer }) => {
         writer.write({ type: "text-start", id: "fixed" });
-        writer.write({ type: "text-delta", id: "fixed", delta: text });
+        writer.write({ type: "text-delta", id: "fixed", delta: quiet(text) });
         writer.write({ type: "text-end", id: "fixed" });
       },
     }),
@@ -92,7 +95,7 @@ export async function POST(req: Request) {
   // Safety first, same as WhatsApp: a fixed reply, the model does not run.
   if (isEmergency(text)) {
     const reply = emergencyReply(text, clinic.phone);
-    after(() => save([user(text), assistant(reply)], reply));
+    after(() => save([user(text), assistant(quiet(reply))], reply)); // the marker survives a reload
     return fixed(reply);
   }
 
@@ -112,7 +115,7 @@ export async function POST(req: Request) {
         await result.completed;
         await logUsage(clinic.id, "web", result.state.usage);
         await save(result.history.slice(saved.length), result.finalOutput);
-        await reviewAndLog({ clinic, patientId: patient.id, channel: "web", userText: text, reply: result.finalOutput && splitChips(result.finalOutput).text, items: result.newItems });
+        await reviewAndLog({ clinic, patientId: patient.id, channel: "web", userText: text, reply: result.finalOutput && splitChips(result.finalOutput).text, items: result.newItems, earlier: saved });
       } catch (e) {
         console.error("[chat]", (e as Error).message);
       }

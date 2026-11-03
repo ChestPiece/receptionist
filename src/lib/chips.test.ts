@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { icsFor, markerOf, splitChips, toolChips } from "./chips";
+import { fallbackChips, hasMarker, icsFor, markerOf, splitChips, toolChips } from "./chips";
 
 describe("splitChips", () => {
   it("parses a complete marker and strips it", () => {
@@ -65,5 +65,14 @@ describe("icsFor", () => {
     expect(ics).toContain("DTEND:20261103T163000");
     expect(ics).toContain("SUMMARY:Filling");
     expect(ics).toContain("LOCATION:Dubai");
+  });
+});
+
+describe("fallback chips", () => {
+  it("only a missing marker gets the fallback; an empty marker means no chips", () => {
+    expect(hasMarker("Sure!\n[[chips: ]]")).toBe(true);
+    expect(hasMarker("Sure!")).toBe(false);
+    expect(fallbackChips(false).map((c) => c.label)).toEqual(["Book a visit", "Prices", "Talk to the front desk"]);
+    expect(fallbackChips(true).every((c) => c.label && /[؀-ۿ]/.test(c.label))).toBe(true);
   });
 });
