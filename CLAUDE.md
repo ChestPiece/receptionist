@@ -66,6 +66,9 @@ Package manager is **bun** (`bun.lock` only, no `package-lock.json`). Use `bun i
 - Chat history comes back after a reload (`GET /api/chat`). Not yet: embeddable `widget.js` + `allowed_origins` check, per-IP rate limit, reminders for web patients.
 - UI components are vendored by the shadcn (`new-york`, Radix) and AI Elements CLIs in `src/components/{ui,ai-elements}` and skipped by ESLint.
 
+## Starter kit (2026-11-04)
+- `../agent-starter` (own git repo, local only so far) is a generic copy of the chat + voice agent for other projects: edit `src/agent/brand.ts` and `src/agent/config.ts`. It is a copy, not a dependency: this app does not import it, and fixes are ported by hand.
+
 ## Public demo (`/demo`, 2026-11-04)
 - The landing's "Try Sara" CTAs open `/demo`: the real `Chat` (`embedded`, demo `starters`) on the left and a live "front desk view" (`src/app/demo/desk.tsx`, polls `GET /api/demo/desk` every 3 s) on the right; tabs on phones. Sandbox clinic slug `demo` (`DEMO_SLUG`, `src/lib/demo.ts`), created from `scripts/demo-clinic.json` with `scripts/new-clinic.ts`; no `staff_whatsapp`, no WhatsApp creds.
 - The desk shows only the visitor's own lead, visits and events; everyone else's visits are anonymous "Booked" blocks (`deskView`). After a handoff the visitor can reply as the front desk and hand back (`POST /api/demo/reply`, demo clinic + own paused chat only).
