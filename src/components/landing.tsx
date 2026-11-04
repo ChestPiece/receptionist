@@ -159,8 +159,10 @@ export function NightWaves({
   } | null>(null);
   useEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    // "idle" fetches the chunk now so the download overlaps the hero entrance; only the mount (WebGL context) waits.
+    const chunk = when === "idle" ? import("@/components/pattern-waves") : null;
     const show = () =>
-      import("@/components/pattern-waves").then((m) =>
+      (chunk ?? import("@/components/pattern-waves")).then((m) =>
         setOn({
           Waves: m.default,
           color: getComputedStyle(document.documentElement)
@@ -170,8 +172,12 @@ export function NightWaves({
         }),
       );
     if (when === "idle") {
-      // Wait ~2.5 s so ogl's parse and the WebGL context never compete with the hero entrance, the first frames and hydration.
-      const id = setTimeout(show, 2500);
+      // Mount when the main thread is free, so the WebGL context never competes with the hero entrance's first frames.
+      if ("requestIdleCallback" in window) {
+        const id = window.requestIdleCallback(show, { timeout: 1000 });
+        return () => window.cancelIdleCallback(id);
+      }
+      const id = setTimeout(show, 700);
       return () => clearTimeout(id);
     }
     const io = new IntersectionObserver(

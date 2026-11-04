@@ -4,14 +4,14 @@ import { createAiSdkUiMessageStreamResponse } from "@openai/agents-extensions/ai
 import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 import { after } from "next/server";
 import { z } from "zod";
-import { appendHistory, capText, lapseMarker, RATE_MAX, RATE_WINDOW_MS, slowDown, sorry, stillPaused, trimHistory } from "@/lib/agent";
+import { appendHistory, capText, lapseMarker, slowDown, sorry, stillPaused, trimHistory } from "@/lib/agent";
 import { markerOf, splitChips } from "@/lib/chips";
 import { clinicBySlug } from "@/lib/clinics";
 import { db, logMessages, logUsage } from "@/lib/db";
 import { reviewAndLog } from "@/lib/reviewer";
 import { emergencyReply, isEmergency } from "@/lib/safety";
 import { streamSara } from "@/lib/sara";
-import { supabaseServer } from "@/lib/supabase/server";
+import { overRateLimit, sameOrigin, upsertVisitor } from "@/lib/visitor";
 
 export const maxDuration = 60;
 
@@ -38,22 +38,10 @@ const fixed = (text: string) =>
     }),
   });
 
-// ?test=1 counts only for a signed-in member of this clinic or a platform admin (RLS lets them read the clinic row); anyone else is a normal visitor.
-async function isStaffOf(clinicId: string) {
-  try {
-    const { data } = await (await supabaseServer()).from("clinics").select("id").eq("id", clinicId).maybeSingle();
-    return !!data;
-  } catch {
-    return false;
-  }
-}
-
 const HELD = "Our front desk has your chat and will reply here shortly.";
 
 export async function POST(req: Request) {
-  // ponytail: same-origin only while the chat page is ours; the embeddable widget (P1) checks clinic.allowed_origins.
-  const origin = req.headers.get("origin");
-  if (origin && new URL(origin).host !== req.headers.get("host")) return new Response("forbidden", { status: 403 });
+  if (!sameOrigin(req)) return new Response("forbidden", { status: 403 });
 
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return new Response("bad request", { status: 400 });
@@ -65,21 +53,8 @@ export async function POST(req: Request) {
   if (!clinic?.active) return new Response("not found", { status: 404 });
 
   const sb = db();
-  const { data: patient, error } = await sb
-    .from("patients")
-    .upsert({ clinic_id: clinic.id, web_visitor_id: visitorId, ...(test && (await isStaffOf(clinic.id)) ? { is_test: true } : {}) }, { onConflict: "clinic_id,web_visitor_id" })
-    .select("id, name, phone")
-    .single();
-  if (error) throw error;
-
-  // ponytail: per visitor id only; a script rotating ids gets past it. Add a per-IP limit before the widget goes on real sites.
-  const { count } = await sb
-    .from("messages")
-    .select("id", { count: "exact", head: true })
-    .eq("patient_id", patient.id)
-    .eq("role", "patient")
-    .gt("created_at", new Date(Date.now() - RATE_WINDOW_MS).toISOString());
-  if ((count ?? 0) >= RATE_MAX) return fixed(slowDown(clinic.phone));
+  const patient = await upsertVisitor(clinic, visitorId, test);
+  if (await overRateLimit(patient.id)) return fixed(slowDown(clinic.phone));
 
   const { data: convo } = await sb.from("conversations").select("history, bot_paused, updated_at").eq("patient_id", patient.id).maybeSingle();
   const saved = trimHistory((convo?.history ?? []) as AgentInputItem[]);

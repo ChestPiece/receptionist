@@ -8,7 +8,7 @@ export const db = () =>
     auth: { persistSession: false },
   }));
 
-type Channel = "whatsapp" | "web";
+type Channel = "whatsapp" | "web" | "voice";
 
 // Readable transcript for the staff inbox. Never throws: the patient reply matters more than the log.
 export async function logMessages(clinicId: string, patientId: string, channel: Channel, rows: { role: "patient" | "assistant" | "staff" | "system"; body: string }[]) {

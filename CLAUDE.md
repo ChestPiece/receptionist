@@ -58,6 +58,16 @@ Package manager is **bun** (`bun.lock` only, no `package-lock.json`). Use `bun i
 - Chat history comes back after a reload (`GET /api/chat`). Not yet: embeddable `widget.js` + `allowed_origins` check, per-IP rate limit, reminders for web patients.
 - UI components are vendored by the shadcn (`new-york`, Radix) and AI Elements CLIs in `src/components/{ui,ai-elements}` and skipped by ESLint.
 
+## Voice call (web, 2026-11-04)
+- "Call Sara" in the web chat header. The browser holds a WebRTC call to OpenAI Realtime (`OPENAI_REALTIME_MODEL`, default `gpt-realtime-2.1-mini`; voice `OPENAI_REALTIME_VOICE`, default `marin`; reasoning `low`, `semantic_vad`). Client: `src/app/chat/[slug]/call.tsx`, raw data-channel events, no SDK.
+- Routes (same trust as `/api/chat`: clinic by slug, patient by `visitorId`; helpers in `src/lib/visitor.ts`):
+  - `POST /api/voice`: creates the call (`/v1/realtime/calls`) with the voice prompt (`buildInstructions(..., "voice")`), the last chat turns (`spokenHistory`) and `toolSchemas()`. Refuses a paused chat (409) and over-limit visitors (429: `RATE_MAX` messages, or 3 calls per hour counted from `agent_events` kind `call`). The key and prompt never reach the browser.
+  - `POST /api/voice/tool`: runs one tool via `runTool` (channel `voice`). Voice tools = `voiceTools`: no `save_contact`/`book_many`; `book` needs `read_back_confirmed: true`, else it returns `READ_BACK`.
+  - `POST /api/voice/turn`: saves each finished turn to `messages` (channel `voice`, inbox tag "Call") and Sara's history, so typed chat after a call knows what was said. A caller turn gets the emergency check; on a hit the browser cancels Sara's reply and makes her say the fixed one.
+- Caps: 8 min per call, hang up after 45 s without caller speech, hang up on page hide.
+- Needs `0010_voice.sql` (allows `'voice'` in the `messages` and `usage_events` channel checks). Without it, voice transcripts fail to log; the call still works.
+- `spikes/voice/` (untracked) is the A/B test bench on 127.0.0.1:8787.
+
 ## Design (clean SaaS, 2026-10-25, replaces "The Ledger")
 - **Brand guidelines are locked in `.tastemaker/style-lock.md`. Read it before any UI work and follow it; change it only when Anas asks.**
 - Neutral stone palette + sage `--primary`, blue `--web`, red `--alert` (tokens in `src/app/globals.css`). Geist (UI + headings), Geist Mono (sparing), Readex Pro for Arabic. No paper texture. `.slip` now means a plain card; `.torn-top` is a no-op kept for old dashboard markup.
