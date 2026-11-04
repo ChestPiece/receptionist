@@ -3,6 +3,7 @@ import { assistant } from "@openai/agents";
 import { HISTORY_MAX, stillPaused } from "./agent";
 import { bookingSource } from "./booking";
 import { activeClinics, personaName, type Clinic } from "./clinics";
+import { DEMO_SLUG, purgeDemo, topUpDemo } from "./demo";
 import { db, logMessages } from "./db";
 import { logEvent, visitSummary } from "./events";
 import { availability } from "./booking";
@@ -211,7 +212,17 @@ async function sendFollowups(clinic: Clinic, now: Date, budget: number) {
 
 export async function runJobs(now = new Date()) {
   const total = { clinics: 0, reminders: 0, followups: 0 };
-  for (const clinic of await activeClinics()) {
+  const clinics = await activeClinics();
+  // Public demo: drop old visitor rows and keep the calendar busy. Never blocks the real clinics' jobs.
+  try {
+    const purged = await purgeDemo(db(), now);
+    const demo = clinics.find((c) => c.slug === DEMO_SLUG);
+    const seeded = demo ? await topUpDemo(db(), demo, now) : 0;
+    if (purged || seeded) console.log(`[demo] purged=${purged} seeded=${seeded}`);
+  } catch (e) {
+    console.error("[demo]", (e as Error).message);
+  }
+  for (const clinic of clinics) {
     if (!clinic.wa) continue; // WhatsApp not connected yet
     if (quietHours(now, clinic.utc_offset_minutes)) continue;
     // One clinic's failure must not stop the others.

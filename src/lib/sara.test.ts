@@ -1,6 +1,7 @@
-import { expect, test, vi } from "vitest";
+import { assistant, user, type AgentInputItem } from "@openai/agents";
+import { describe, expect, it, test, vi } from "vitest";
 import type { Clinic } from "./clinics";
-import { bookMany, buildInstructions, cleanName, cleanPhone, READ_BACK, runTool, toolSchemas } from "./sara";
+import { bookMany, buildInstructions, cleanName, cleanPhone, READ_BACK, replyText, runTool, toolSchemas } from "./sara";
 
 const clinic: Clinic = {
   id: "c1",
@@ -122,4 +123,17 @@ test("voice book without a confirmed read-back books nothing", async () => {
   const args = { service: "Cleaning", date: "2026-11-05", time: "10:00", patient_name: "Omar", patient_phone: "0501112233", dentist: null, visit_for: null, read_back_confirmed: false };
   expect(await runTool(clinic, { id: "p1", name: null }, "book", JSON.stringify(args))).toBe(READ_BACK);
   expect(await runTool(clinic, { id: "p1", name: null }, "save_contact", "{}")).toMatch(/Unknown tool/);
+});
+
+describe("replyText", () => {
+  const out = (text: string, phase = "commentary") => ({ type: "message", role: "assistant", status: "completed", phase, content: [{ type: "output_text", text }] }) as unknown as AgentInputItem;
+  it("uses the final answer when there is one", () => {
+    expect(replyText("Booked.", [user("hi"), out("Booked.")])).toBe("Booked.");
+  });
+  it("falls back to the last commentary text when the final answer is empty", () => {
+    expect(replyText("", [user("book"), out("Sure, one moment."), out("What's your name?"), out("", "final_answer")])).toBe("What's your name?");
+  });
+  it("never returns an older turn, such as a front desk marker before the patient's message", () => {
+    expect(replyText("", [assistant("[Front desk] (stepped away)"), user("hello?"), out("", "final_answer")])).toBeUndefined();
+  });
 });
