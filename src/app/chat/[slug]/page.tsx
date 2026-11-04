@@ -43,10 +43,10 @@ async function ClinicChat({ params, searchParams }: Pick<PageProps<"/chat/[slug]
 
 export default function ChatPage({ params, searchParams }: PageProps<"/chat/[slug]">) {
   return (
-    <main className="relative h-dvh overflow-hidden">
+    <div className="relative h-dvh overflow-hidden">
       <Suspense fallback={<div className="relative h-full animate-pulse" />}>
         <ClinicChat params={params} searchParams={searchParams} />
       </Suspense>
-    </main>
+    </div>
   );
 }

@@ -6,6 +6,8 @@ import { desk, who } from "@/lib/dashboard";
 import { localDate } from "@/lib/slots";
 import { PageBody, PageHeader } from "../page-frame";
 import { AddPatientDialog } from "../booking-dialog";
+import { BulkDelete } from "../confirm-delete";
+import { deletePatients } from "../settings/actions";
 
 export const metadata = { title: "Patients" };
 
@@ -38,6 +40,8 @@ export default async function Patients({ searchParams }: PageProps<"/dashboard/p
     if (v.starts_at >= now && v.status === "booked" && !next.has(v.patient_id)) next.set(v.patient_id, v.starts_at);
   }
   const day = (iso?: string) => (iso ? DAY.format(new Date(`${localDate(new Date(iso), clinic.utc_offset_minutes)}T00:00:00Z`)) : "");
+  const owner = clinic.role === "owner";
+  const pick = "size-4 accent-primary align-middle";
   const tagHref = (t?: string) => `?${new URLSearchParams({ ...(q ? { q } : {}), ...(t ? { tag: t } : {}) })}`;
 
   return (
@@ -58,14 +62,18 @@ export default async function Patients({ searchParams }: PageProps<"/dashboard/p
               {tags.map((t) => <Link key={t} href={tagHref(t)} className={`shrink-0 rounded-full border px-2.5 py-1 text-xs ${tag === t ? "border-foreground" : "text-muted-foreground"}`}>{t}</Link>)}
             </div>
           )}
-          <span className="ms-auto text-xs text-muted-foreground">{rows.length} shown</span>
+          <span className="ms-auto flex items-center gap-3 text-xs text-muted-foreground">
+            {owner && <BulkDelete group="patients" noun="patient" run={deletePatients} body="Their visits, chat history and messages go too." />}
+            {rows.length} shown
+          </span>
         </div>
         <div className="min-h-0 flex-1 overflow-auto">
           <Table>
             <TableHeader className="sticky top-0 z-10 bg-background">
               <TableRow>
-                <TableHead className="ps-4">Name</TableHead>
-                <TableHead>Channel</TableHead>
+                {owner && <TableHead className="w-10 ps-4"><input type="checkbox" data-pick-all="patients" aria-label="Select all patients" className={pick} /></TableHead>}
+                <TableHead className={owner ? "" : "ps-4"}>Name</TableHead>
+                <TableHead className="max-sm:hidden">Channel</TableHead>
                 <TableHead className="max-sm:hidden">Phone</TableHead>
                 <TableHead className="max-md:hidden">Tags</TableHead>
                 <TableHead className="max-lg:hidden">Last visit</TableHead>
@@ -73,14 +81,15 @@ export default async function Patients({ searchParams }: PageProps<"/dashboard/p
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.length === 0 && <TableRow><TableCell colSpan={6} className="ps-4 py-6 text-muted-foreground">{term || tag ? "No patient matches." : "No patients yet."}</TableCell></TableRow>}
+              {rows.length === 0 && <TableRow><TableCell colSpan={owner ? 7 : 6} className="ps-4 py-6 text-muted-foreground">{term || tag ? "No patient matches." : "No patients yet."}</TableCell></TableRow>}
               {rows.map((r) => (
                 <TableRow key={r.id}>
-                  <TableCell className="ps-4">
+                  {owner && <TableCell className="ps-4"><input type="checkbox" data-pick="patients" value={r.id} aria-label={`Select ${who(r)}`} className={pick} /></TableCell>}
+                  <TableCell className={owner ? "" : "ps-4"}>
                     <Link href={`/dashboard/patients/${r.id}`} className="font-medium hover:underline">{who(r)}</Link>
                     {r.opted_out && <span className="ms-2 text-xs text-muted-foreground">opted out</span>}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="max-sm:hidden">
                     <span className={`rounded px-1.5 py-px text-[11px] font-medium ${r.wa_id ? "bg-sage-soft" : r.web_visitor_id ? "bg-web-soft" : "bg-muted"}`}>
                       {r.wa_id ? "WhatsApp" : r.web_visitor_id ? "Website" : "Desk"}
                     </span>

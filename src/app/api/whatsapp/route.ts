@@ -10,7 +10,7 @@ export async function POST(request: Request) {
   const payload = await request.json().catch(() => null);
   const msg = parseWebhook(payload);
   const clinic = msg ? await clinicByInstance(msg.instanceId) : null;
-  if (msg && !(clinic?.active && clinic.wa && secretMatches(secret, clinic.webhook_secret ?? undefined)))
+  if (msg && !(clinic?.active && clinic.wa?.provider === "ultramsg" && secretMatches(secret, clinic.webhook_secret ?? undefined)))
     return new Response("forbidden", { status: 403 });
 
   // While the bot runs on a personal number, only answer listed testers (comma-separated chat ids).
@@ -18,7 +18,9 @@ export async function POST(request: Request) {
 
   // One line per webhook, no message text (no PHI in logs).
   const outcome = !msg ? "ignored" : allowed.length && !allowed.includes(msg.from) ? "not allowlisted" : "reply";
-  console.log(`[webhook] ${clinic?.slug ?? "-"} ${payload?.event_type ?? "?"} fromMe=${payload?.data?.fromMe ?? "?"} -> ${outcome}`);
+  // event_type comes before any auth: log it only when it is a plain word, so a crafted payload can't forge log lines.
+  const event = /^[a-z_]{1,40}$/.test(String(payload?.event_type)) ? payload.event_type : "?";
+  console.log(`[webhook] ${clinic?.slug ?? "-"} ${event} fromMe=${payload?.data?.fromMe === true} -> ${outcome}`);
 
   // Ack now, answer after the response (dedupe happens in the DB inside handleMessage).
   if (msg && clinic && outcome === "reply") after(() => handleMessage(clinic, msg).catch((e) => console.error("[handle]", e.message)));

@@ -7,11 +7,11 @@ import { z } from "zod";
 import { appendHistory, capText, lapseMarker, RATE_MAX, RATE_WINDOW_MS, slowDown, sorry, stillPaused, trimHistory } from "@/lib/agent";
 import { markerOf, splitChips } from "@/lib/chips";
 import { clinicBySlug } from "@/lib/clinics";
-import { db, logMessages, logUsage } from "@/lib/db";
+import { allow, db, logMessages, logUsage } from "@/lib/db";
 import { reviewAndLog } from "@/lib/reviewer";
-import { emergencyReply, isEmergency } from "@/lib/safety";
+import { emergencyReply, isEmergency, unforge } from "@/lib/safety";
 import { streamSara } from "@/lib/sara";
-import { supabaseServer } from "@/lib/supabase/server";
+import { ipOf, overRateLimit, sameOrigin, upsertVisitor } from "@/lib/visitor";
 
 export const maxDuration = 60;
 
@@ -23,60 +23,43 @@ const Body = z.object({
   message: z.object({ role: z.literal("user"), parts: z.array(z.object({ type: z.string(), text: z.string().optional() })) }),
 });
 
+// Fixed replies carry an empty chips marker, so the chat shows no fallback chips under them (e.g. after an emergency reply).
+const quiet = (text: string) => `${text}\n[[chips: ]]`;
+
 // A fixed reply in the same stream format, for answers the model must not write (emergency, rate limit, errors).
 const fixed = (text: string) =>
   createUIMessageStreamResponse({
     stream: createUIMessageStream({
       execute: ({ writer }) => {
         writer.write({ type: "text-start", id: "fixed" });
-        writer.write({ type: "text-delta", id: "fixed", delta: text });
+        writer.write({ type: "text-delta", id: "fixed", delta: quiet(text) });
         writer.write({ type: "text-end", id: "fixed" });
       },
     }),
   });
 
-// ?test=1 counts only for a signed-in member of this clinic or a platform admin (RLS lets them read the clinic row); anyone else is a normal visitor.
-async function isStaffOf(clinicId: string) {
-  try {
-    const { data } = await (await supabaseServer()).from("clinics").select("id").eq("id", clinicId).maybeSingle();
-    return !!data;
-  } catch {
-    return false;
-  }
-}
-
 const HELD = "Our front desk has your chat and will reply here shortly.";
 
 export async function POST(req: Request) {
-  // ponytail: same-origin only while the chat page is ours; the embeddable widget (P1) checks clinic.allowed_origins.
-  const origin = req.headers.get("origin");
-  if (origin && new URL(origin).host !== req.headers.get("host")) return new Response("forbidden", { status: 403 });
+  if (!sameOrigin(req)) return new Response("forbidden", { status: 403 });
 
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return new Response("bad request", { status: 400 });
   const { slug, visitorId, message, test } = parsed.data;
-  const text = capText(message.parts.map((p) => (p.type === "text" ? (p.text ?? "") : "")).join("\n").trim());
+  const text = capText(unforge(message.parts.map((p) => (p.type === "text" ? (p.text ?? "") : "")).join("\n").trim()));
   if (!text) return new Response("empty message", { status: 400 });
 
   const clinic = await clinicBySlug(slug);
   if (!clinic?.active) return new Response("not found", { status: 404 });
 
+  // An emergency always gets the 998 reply, even past the limits below (a few per visitor, so it can't be used to dodge them).
+  const urgent = isEmergency(text) && (await allow(`emerg:${clinic.id}:${visitorId}`, 3, 600));
+  // Per IP (rotating visitor ids gets past the per-visitor count), then per visitor, counted atomically before the model runs.
+  if (!urgent && !(await allow(`chat-ip:${ipOf(req)}`, 60, 600))) return fixed(slowDown(clinic.phone));
   const sb = db();
-  const { data: patient, error } = await sb
-    .from("patients")
-    .upsert({ clinic_id: clinic.id, web_visitor_id: visitorId, ...(test && (await isStaffOf(clinic.id)) ? { is_test: true } : {}) }, { onConflict: "clinic_id,web_visitor_id" })
-    .select("id, name, phone")
-    .single();
-  if (error) throw error;
-
-  // ponytail: per visitor id only; a script rotating ids gets past it. Add a per-IP limit before the widget goes on real sites.
-  const { count } = await sb
-    .from("messages")
-    .select("id", { count: "exact", head: true })
-    .eq("patient_id", patient.id)
-    .eq("role", "patient")
-    .gt("created_at", new Date(Date.now() - RATE_WINDOW_MS).toISOString());
-  if ((count ?? 0) >= RATE_MAX) return fixed(slowDown(clinic.phone));
+  const patient = await upsertVisitor(clinic, visitorId, test);
+  const [overCount, underHits] = urgent ? [false, true] : await Promise.all([overRateLimit(patient.id), allow(`chat-v:${patient.id}`, RATE_MAX, RATE_WINDOW_MS / 1000)]);
+  if (overCount || !underHits) return fixed(slowDown(clinic.phone));
 
   const { data: convo } = await sb.from("conversations").select("history, bot_paused, updated_at").eq("patient_id", patient.id).maybeSingle();
   const saved = trimHistory((convo?.history ?? []) as AgentInputItem[]);
@@ -92,7 +75,7 @@ export async function POST(req: Request) {
   // Safety first, same as WhatsApp: a fixed reply, the model does not run.
   if (isEmergency(text)) {
     const reply = emergencyReply(text, clinic.phone);
-    after(() => save([user(text), assistant(reply)], reply));
+    after(() => save([user(text), assistant(quiet(reply))], reply)); // the marker survives a reload
     return fixed(reply);
   }
 
@@ -112,7 +95,7 @@ export async function POST(req: Request) {
         await result.completed;
         await logUsage(clinic.id, "web", result.state.usage);
         await save(result.history.slice(saved.length), result.finalOutput);
-        await reviewAndLog({ clinic, patientId: patient.id, channel: "web", userText: text, reply: result.finalOutput && splitChips(result.finalOutput).text, items: result.newItems });
+        await reviewAndLog({ clinic, patientId: patient.id, channel: "web", userText: text, reply: result.finalOutput && splitChips(result.finalOutput).text, items: result.newItems, earlier: saved });
       } catch (e) {
         console.error("[chat]", (e as Error).message);
       }

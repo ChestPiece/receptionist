@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { reviewEvents, shouldReview, toolTrace } from "./reviewer";
+import { earlierTurns, reviewEvents, shouldReview, toolTrace } from "./reviewer";
 
 test("gate: a tool call always triggers a review", () => {
   expect(shouldReview("Sure!", [{ name: "find_slots", output: "{}" }])).toBe(true);
@@ -39,4 +39,18 @@ test("trace pairs each tool call with its output", () => {
     { type: "message_output_item", rawItem: {} },
   ] as never;
   expect(toolTrace(items)).toEqual([{ name: "book", output: "booked" }]);
+});
+
+test("earlier turns give the reviewer the slots an earlier find_slots returned", () => {
+  const h = [
+    { role: "user", content: "Earliest" },
+    { type: "function_call", name: "find_slots", callId: "a", arguments: "{}" },
+    { type: "function_call_result", name: "find_slots", callId: "a", output: { type: "text", text: '{"days":[{"date":"2026-11-04","times":["20:00"]}]}' } },
+    { role: "assistant", content: [{ type: "output_text", text: "Here are the free times." }] },
+  ];
+  expect(earlierTurns(h)).toBe('Patient: Earliest\nTool find_slots result: {"days":[{"date":"2026-11-04","times":["20:00"]}]}\nBot: Here are the free times.');
+});
+
+test("events: ok true logs nothing, even if the model listed passed checks", () => {
+  expect(reviewEvents("c1", "p1", { ok: true, issues: [{ kind: "unbacked_claim", note: "backed, no action" }] })).toEqual([]);
 });

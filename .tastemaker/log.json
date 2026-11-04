@@ -1,5 +1,67 @@
 [
   {
+    "date": "2026-11-03",
+    "surface": "landing / (v2)",
+    "mood": "one night at the front desk, the clock as the hero",
+    "macrostructure": "poster hero (giant mono 18:00 + hour rail + serif H1, live chat right) + desk log with sticky clock, rail marks and running tally, five entry layouts (phone, wide+calendar, centred alarm, flipped reminder, full inbox) + one ruled setup sheet + editorial safety + centred two-line tagline reveal + FAQ + night close '18:00 tonight'",
+    "archetypes": {
+      "nav": "floating pill, night follows the desk sky",
+      "hero": "typographic clock poster, rail with entry marks (02:14 in alert)",
+      "feature": "per-hour compositions, no repeated shape",
+      "proof": "running tally: chats answered, visits booked, sent to your team (sample night)",
+      "how": "single bordered sheet, three ruled columns",
+      "close": "night band, loops back to 18:00"
+    },
+    "arc": [
+      "hook: 18:00, your desk closes at six",
+      "problem/solution: 19:12 Arabic, 23:40 booked into the calendar",
+      "trust: 02:14 emergency gets 998",
+      "proof: 06:30 reminders at dawn, 09:00 inbox with the night's tally",
+      "how it works: one setup sheet",
+      "close: 18:00 tonight, book a demo call"
+    ],
+    "critique": {
+      "showDontTell": 5,
+      "philosophy": 5,
+      "hierarchy": 4,
+      "specificity": 5,
+      "restraint": 4,
+      "variety": 5
+    }
+  },
+  {
+    "date": "2026-11-03",
+    "surface": "landing /",
+    "mood": "one night at the front desk, cream day to night to dawn",
+    "macrostructure": "split hero with live chat + sticky-clock desk log (5 hours, real product pieces, sky shifts) + setup steps with UI pieces + editorial safety + tagline word reveal + FAQ + night close",
+    "archetypes": {
+      "nav": "floating pill, night over night entries, CTA book a demo call",
+      "hero": "cream split, serif two-line H1, 18:00 stamp, live chat replay",
+      "story": "sticky mono clock + hairline rail, entries as ruled rows",
+      "feature": "3 setup cards with real UI rows",
+      "proof": "editorial numbered safety list",
+      "tagline": "scrubbed word fill",
+      "faq": "details list + FAQ schema",
+      "cta": "night band, mirrored dawn horizon"
+    },
+    "arc": [
+      "hook: your desk closes at six, patients keep writing",
+      "problem/solution: 19:12 Arabic, 23:40 booked",
+      "trust: 02:14 emergency gets 998",
+      "proof: 06:30 reminders, 09:00 one inbox",
+      "how it works: set up with you",
+      "close: book a 15 min demo call"
+    ],
+    "critique": {
+      "showDontTell": 4,
+      "philosophy": 4,
+      "hierarchy": 4,
+      "specificity": 4,
+      "restraint": 4,
+      "variety": 4
+    }
+  },
+  {
     "date": "2026-11-01",
     "surface": "landing /",
     "mood": "one night: night hero, dawn film, morning body, night close",

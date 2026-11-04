@@ -3,10 +3,10 @@
 import { Logo } from "@/components/logo";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type DynamicToolUIPart, type UIMessage } from "ai";
-import { ArrowLeftIcon, ArrowUpIcon, ChevronDownIcon, MapPinIcon, PanelLeftIcon, PhoneIcon, PlusIcon, RotateCcwIcon } from "lucide-react";
+import { ArrowLeftIcon, ArrowUpIcon, ChevronDownIcon, MapPinIcon, PhoneCallIcon, PhoneIcon, PlusIcon, RotateCcwIcon } from "lucide-react";
 import Link from "next/link";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { AppointmentList, BookedCard, Bubble, EASE_OUT, SlotPicker, TypingDots, type Appt, type Booked, type Slots } from "@/components/chat-cards";
 import { Conversation, ConversationContent, ConversationScrollButton } from "@/components/ai-elements/conversation";
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
@@ -15,10 +15,11 @@ import { Shimmer } from "@/components/ai-elements/shimmer";
 import { Suggestion } from "@/components/ai-elements/suggestion";
 import { InputGroupAddon } from "@/components/ui/input-group";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { Sidebar, SidebarInset, SidebarProvider, SidebarRail, SidebarTrigger } from "@/components/ui/sidebar";
 import { ThemeToggle } from "@/components/ledger";
-import { icsFor, splitChips, toolChips, type Chip } from "@/lib/chips";
+import { fallbackChips, hasMarker, icsFor, splitChips, toolChips, type Chip } from "@/lib/chips";
 import { cn } from "@/lib/utils";
+import { CallBar, useCall } from "./call";
 import type { Service } from "@/lib/clinics";
 import { DAYS, type Hours } from "@/lib/slots";
 
@@ -92,7 +93,7 @@ function ClinicInfo({ info, phone }: { info: Info; phone: string | null }) {
             {info.services.map((s) => (
               <div key={s.name} className="flex justify-between gap-4">
                 <dt>{s.name}</dt>
-                <dd className="shrink-0 tabular-nums text-muted-foreground">AED {s.price_aed.toLocaleString("en")}</dd>
+                <dd className="shrink-0 tabular-nums text-muted-foreground">{s.price_aed != null ? `AED ${s.price_aed.toLocaleString("en")}` : "Ask"}</dd>
               </div>
             ))}
           </dl>
@@ -190,10 +191,17 @@ function SidebarBody({ name, sample, logo, persona, info, phone }: SideProps) {
 // Starters, only on the empty chat. After that the chips follow the conversation (see chipsFor).
 const CHIPS = ["Book a visit", "Prices", "Opening hours", "My appointments", "Talk to the front desk"];
 
-// Chips for the newest assistant turn: the model's hidden marker line first, else what the tools just returned.
+// Chips for the newest assistant turn: what a card the tools just drew needs first (the model tends to repeat the
+// slot days as chips), else the model's hidden marker line, else (no marker at all) a few safe defaults.
+// An empty marker means Sara wants no chips (asking for a name, say).
 function chipsFor(m: UIMessage, lastUserText: string): Chip[] {
-  const marked = splitChips(m.parts.map((p) => (p.type === "text" ? p.text : "")).join("")).chips;
-  return marked.length ? marked.map((label) => ({ label })) : toolChips(m.parts as Parameters<typeof toolChips>[0], /[؀-ۿ]/.test(lastUserText));
+  const raw = m.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
+  const ar = /[؀-ۿ]/.test(lastUserText);
+  const tools = toolChips(m.parts as Parameters<typeof toolChips>[0], ar);
+  if (tools.length) return tools;
+  const marked = splitChips(raw).chips;
+  if (marked.length) return marked.map((label) => ({ label }));
+  return raw.trim() && !hasMarker(raw) ? fallbackChips(ar) : [];
 }
 
 // "Add to calendar": a client-side .ics file, no server round trip.
@@ -333,21 +341,30 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, id, star
   }, [paused, check]);
   const send = (text: string) => !busy && text.trim() && sendMessage({ text });
 
+  // Voice call: each finished spoken turn lands in the thread as a bubble (ids start with "c", never "s" = staff).
+  const turnNo = useRef(0);
+  const call = useCall({
+    slug,
+    visitorId: id,
+    test,
+    persona,
+    clinicName: name,
+    onTurn: (role, text) => setMessages((ms) => [...ms, { id: `c${Date.now()}-${turnNo.current++}`, role, parts: [{ type: "text", text }] }]),
+  });
+  const onCall = call.state === "connecting" || call.state === "live";
+
   // Sara "types" her greeting for a beat so the chat opens like a person picked up.
   useEffect(() => {
     const t = setTimeout(() => setGreeted(true), reduce ? 0 : 700);
     return () => clearTimeout(t);
   }, [reduce]);
 
-  const [sidebar, setSidebar] = useState(true);
-  const [sheet, setSheet] = useState(false);
-  const side = <SidebarBody name={name} sample={sample} logo={logo} persona={persona} info={info} phone={phone} />;
   const empty = messages.length === 0;
   const [typedAt, setTypedAt] = useState(-1); // message count when the visitor started typing: chips hide until the next message
   const lastMsg = messages.at(-1);
   const lastUserText = messages.findLast((m) => m.role === "user")?.parts.map((p) => (p.type === "text" ? p.text : "")).join("") ?? "";
   const chips: Chip[] =
-    paused || busy || typedAt === messages.length
+    paused || busy || onCall || typedAt === messages.length
       ? []
       : empty
         ? greeted ? CHIPS.map((label) => ({ label })) : []
@@ -365,29 +382,17 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, id, star
   }, []);
 
   return (
-    <div className="flex h-full">
-      {/* Desktop: collapsible column. Phones: the same content in a left sheet. */}
-      <aside className={cn("hidden shrink-0 overflow-hidden bg-sidebar transition-[width] duration-200 ease-out lg:block", sidebar ? "w-72 border-e" : "w-0")}>
-        <div className="h-full w-72">{side}</div>
-      </aside>
-      <Sheet open={sheet} onOpenChange={setSheet}>
-        <SheetContent side="left" className="w-72 gap-0 bg-sidebar p-0">
-          <SheetTitle className="sr-only">{name}</SheetTitle>
-          {side}
-        </SheetContent>
-      </Sheet>
+    // Same collapsible sidebar as the dashboard: pushes the chat aside from 768px up, a sheet on phones.
+    <SidebarProvider className="h-full min-h-0" style={{ "--sidebar-width": "18rem" } as CSSProperties}>
+      <Sidebar collapsible="offcanvas">
+        <SidebarBody name={name} sample={sample} logo={logo} persona={persona} info={info} phone={phone} />
+        <SidebarRail />
+      </Sidebar>
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      <SidebarInset className="min-h-0 min-w-0 overflow-hidden">
         <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b px-3 sm:px-4">
           <div className="flex min-w-0 items-center gap-2.5">
-            <Button
-              size="icon"
-              variant="ghost"
-              aria-label="Toggle sidebar"
-              onClick={() => (window.matchMedia("(min-width: 1024px)").matches ? setSidebar((v) => !v) : setSheet(true))}
-            >
-              <PanelLeftIcon className="size-4" />
-            </Button>
+            <SidebarTrigger className="-ms-1" />
             <Avatar logo={logo} name={name} letter={persona[0]} className="size-8" />
             <div className="min-w-0 leading-tight">
               <div className="truncate text-sm font-medium">{name}</div>
@@ -400,13 +405,20 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, id, star
               </div>
             </div>
           </div>
-          {phone && (
-            <Button asChild size="sm" variant="outline">
-              <a href={`tel:${phone}`} aria-label="Call the clinic">
-                <PhoneIcon className="size-4" /> <span className="hidden sm:inline">Call clinic</span>
-              </a>
-            </Button>
-          )}
+          <div className="flex shrink-0 items-center gap-2">
+            {!paused && !onCall && (
+              <Button size="sm" variant="outline" className="border-primary/40 text-primary hover:text-primary" aria-label={`Call ${persona}`} onClick={() => void call.start()} disabled={busy}>
+                <PhoneCallIcon className="size-4" /> <span className="hidden sm:inline">Call {persona}</span>
+              </Button>
+            )}
+            {phone && (
+              <Button asChild size="sm" variant="outline">
+                <a href={`tel:${phone}`} aria-label="Call the clinic">
+                  <PhoneIcon className="size-4" /> <span className="hidden sm:inline">Call clinic</span>
+                </a>
+              </Button>
+            )}
+          </div>
         </header>
 
         <Conversation className="flex-1">
@@ -500,9 +512,17 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, id, star
               ))}
             </div>
           )}
+          {call.error && (
+            <p role="alert" className="text-center text-sm text-alert">
+              {call.error}
+            </p>
+          )}
+          {onCall ? (
+            <CallBar call={call} persona={persona} />
+          ) : (
           <PromptInput
             onSubmit={({ text }) => void send(text)}
-            className="[&_[data-slot=input-group]]:rounded-2xl [&_[data-slot=input-group]]:bg-card [&_[data-slot=input-group]]:shadow-sm"
+            className="[&_[data-slot=input-group]]:h-auto [&_[data-slot=input-group]]:items-end [&_[data-slot=input-group]]:rounded-2xl [&_[data-slot=input-group]]:bg-card [&_[data-slot=input-group]]:shadow-sm"
           >
             <PromptInputBody>
               <PromptInputTextarea dir="auto" onChange={() => setTypedAt(messages.length)} placeholder={`Message ${persona}…`} rows={1} className="min-h-0 py-3.5 ps-4" />
@@ -513,9 +533,10 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, id, star
               </PromptInputSubmit>
             </InputGroupAddon>
           </PromptInput>
+          )}
           <p className="text-center text-[11px] text-muted-foreground">{persona} is a virtual assistant. In an emergency, call 998.</p>
         </div>
-      </div>
-    </div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }

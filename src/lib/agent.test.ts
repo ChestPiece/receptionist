@@ -80,3 +80,9 @@ test("a lapsed pause leaves a front desk marker, a live or absent one does not",
   expect(lapseMarker({ bot_paused: false, updated_at: "2026-10-22T09:00:00Z" }, now)).toEqual([]);
   expect(lapseMarker(null, now)).toEqual([]);
 });
+
+test("trimHistory never starts on an orphan tool result", () => {
+  const result = { type: "function_call_result", callId: "c", name: "find_slots", status: "completed", output: "x" } as AgentInputItem;
+  const call = { type: "function_call", callId: "d", name: "find_slots", arguments: "{}" } as AgentInputItem;
+  expect(trimHistory([result, user("a"), call, user("b")])).toEqual([user("a"), call, user("b")]);
+});

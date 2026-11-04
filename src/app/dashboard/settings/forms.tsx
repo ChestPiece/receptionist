@@ -15,7 +15,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 import type { Hours } from "@/lib/slots";
 import { cn } from "@/lib/utils";
-import { deleteTimeOff, resetTestChats, saveBranding, saveClinic, saveDentist, saveService, saveTimeOff, type Clash, type SaveResult } from "./actions";
+import { ConfirmDelete } from "../confirm-delete";
+import { deleteDentist, deleteService, deleteTimeOff, resetTestChats, saveBranding, saveClinic, saveDentist, saveService, saveTimeOff, type Clash, type SaveResult } from "./actions";
 
 type Svc = { id: string; name: string; name_ar: string | null; minutes: number; price_aed: number | null; active: boolean };
 type Den = { id: string; name: string; name_ar: string | null; title: string | null; color: string; hours: Hours; active: boolean; service_ids: string[] };
@@ -77,15 +78,15 @@ export function HoursEditor({ value, onChange, disabled }: { value: Hours; onCha
       {WEEK.map(([day, label]) => {
         const wins = value[day] ?? [];
         return (
-          <div key={day} className="flex min-h-9 flex-wrap items-center gap-2">
+          <div key={day} className="flex min-h-9 flex-wrap items-center gap-1.5 sm:gap-2">
             <Switch checked={wins.length > 0} disabled={disabled} onCheckedChange={(on) => set(day, on ? [["09:00", "17:00"]] : [])} aria-label={`Open on ${label}`} />
             <span className="w-9 text-sm">{label}</span>
             {wins.length === 0 && <span className="text-sm text-muted-foreground">Closed</span>}
             {wins.map(([a, b], i) => (
               <span key={i} className="flex items-center gap-1">
-                <Input type="time" step={900} value={a} disabled={disabled} className="h-8 w-[6.5rem]" aria-label={`${label} from`} onChange={(e) => set(day, wins.map((w, j) => (j === i ? [e.target.value, w[1]] : w)))} />
+                <Input type="time" step={900} value={a} disabled={disabled} className="h-8 w-auto px-2" aria-label={`${label} from`} onChange={(e) => set(day, wins.map((w, j) => (j === i ? [e.target.value, w[1]] : w)))} />
                 <span className="text-muted-foreground">to</span>
-                <Input type="time" step={900} value={b} disabled={disabled} className="h-8 w-[6.5rem]" aria-label={`${label} to`} onChange={(e) => set(day, wins.map((w, j) => (j === i ? [w[0], e.target.value] : w)))} />
+                <Input type="time" step={900} value={b} disabled={disabled} className="h-8 w-auto px-2" aria-label={`${label} to`} onChange={(e) => set(day, wins.map((w, j) => (j === i ? [w[0], e.target.value] : w)))} />
                 {!disabled && i > 0 && <Button type="button" size="icon" variant="ghost" className="size-8" aria-label="Remove window" onClick={() => set(day, wins.filter((_, j) => j !== i))}><XIcon /></Button>}
               </span>
             ))}
@@ -186,7 +187,9 @@ function ServiceDialog({ service, dentists, onClose }: { service: Svc | null; de
           </div>
           <label className="flex items-center gap-2 text-sm"><Switch checked={v.active} onCheckedChange={(active) => setV({ ...v, active })} />Offered to patients</label>
           {status}
-          <DialogFooter><Button type="button" variant="ghost" onClick={onClose}>Close</Button><Button disabled={pending}>{pending ? "Saving…" : "Save"}</Button></DialogFooter>
+          <DialogFooter>
+            {service && <span className="sm:me-auto"><ConfirmDelete label="Delete service" title={`Delete ${service.name}?`} body="Sara stops offering it. Past visits keep the service name." run={() => deleteService(service.id)} after={onClose} /></span>}
+            <Button type="button" variant="ghost" onClick={onClose}>Close</Button><Button disabled={pending}>{pending ? "Saving…" : "Save"}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
@@ -244,7 +247,9 @@ function DentistDialog({ dentist, services, clinicHours, onClose }: { dentist: D
           </div>
           <label className="flex items-center gap-2 text-sm"><Switch checked={v.active} onCheckedChange={(active) => setV({ ...v, active })} />Taking bookings</label>
           {status}
-          <DialogFooter><Button type="button" variant="ghost" onClick={onClose}>Close</Button><Button disabled={pending}>{pending ? "Saving…" : "Save"}</Button></DialogFooter>
+          <DialogFooter>
+            {dentist && <span className="sm:me-auto"><ConfirmDelete label="Delete dentist" title={`Delete ${dentist.name}?`} body="Only works for a dentist with no visits on record. Otherwise switch off Taking bookings." run={() => deleteDentist(dentist.id)} after={onClose} /></span>}
+            <Button type="button" variant="ghost" onClick={onClose}>Close</Button><Button disabled={pending}>{pending ? "Saving…" : "Save"}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

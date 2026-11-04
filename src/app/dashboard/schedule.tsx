@@ -13,6 +13,8 @@ import type { Off, SBlock, SCol } from "@/lib/dashboard";
 import { cn } from "@/lib/utils";
 import { cancelForPatient, setVisitStatus } from "./actions";
 import { BookingDialog, type DeskSetup, type Prefill } from "./booking-dialog";
+import { ConfirmDelete } from "./confirm-delete";
+import { deleteVisits } from "./settings/actions";
 
 const ROW = 44; // px per hour
 const KIND = { wa: "bg-sage-soft", web: "bg-web-soft", staff: "bg-alert-soft" } as const;
@@ -142,7 +144,7 @@ const STATUS = [
   { value: "booked", label: "Booked" },
 ];
 
-export function VisitSheet({ visit, closeHref, setup }: { visit: SheetVisit; closeHref: string; setup: DeskSetup }) {
+export function VisitSheet({ visit, closeHref, setup, owner }: { visit: SheetVisit; closeHref: string; setup: DeskSetup; owner?: boolean }) {
   const router = useRouter();
   const [moving, setMoving] = useState(false);
   const close = () => router.push(closeHref, { scroll: false });
@@ -166,10 +168,11 @@ export function VisitSheet({ visit, closeHref, setup }: { visit: SheetVisit; clo
           {STATUS.filter((s) => s.value !== visit.status).map((s) => (
             <Button key={s.value} size="sm" variant="outline" onClick={() => setVisitStatus(visit.id, s.value)}>{s.label}</Button>
           ))}
-          {visit.status !== "cancelled" && (
+          {visit.status === "booked" && (
             <Button size="sm" variant="outline" className="text-alert" onClick={async () => { await cancelForPatient(visit.id); close(); }}>Cancel visit</Button>
           )}
           {visit.patientId && <Button size="sm" variant="ghost" asChild><Link href={`/dashboard/patients/${visit.patientId}`}>Open profile</Link></Button>}
+          {owner && <ConfirmDelete label="Delete visit" title="Delete this visit?" body="It leaves the calendar and gets no reminders. Cancel keeps a record; delete does not." run={() => deleteVisits([visit.id])} after={close} />}
         </div>
       </SheetContent>
       <BookingDialog setup={setup} open={moving} onOpenChange={setMoving} move={{ id: visit.id, serviceId: visit.serviceId, patient: visit.patient }} />

@@ -33,8 +33,9 @@ export async function signOut() {
 // Take over pauses Sara for this chat; the pause lapses 30 min after the last staff activity (stillPaused).
 export async function setPaused(patientId: string, paused: boolean) {
   const sb = await supabaseServer();
-  const { error } = await sb.from("conversations").update({ bot_paused: paused, updated_at: new Date().toISOString() }).eq("patient_id", patientId);
-  if (error) throw new Error("Could not update the chat.");
+  // RLS turns a chat this user may not touch into a silent 0-row update: stop there, before the service-role history write below.
+  const { data: rows, error } = await sb.from("conversations").update({ bot_paused: paused, updated_at: new Date().toISOString() }).eq("patient_id", patientId).select("patient_id");
+  if (error || !rows.length) throw new Error("Could not update the chat.");
   const { data: p } = await sb.from("patients").select("clinic_id, name").eq("id", patientId).maybeSingle();
   if (p) await logEvent(sb, { clinicId: p.clinic_id, patientId, actor: "staff", kind: paused ? "takeover" : "handback", summary: `${paused ? "Took over" : "Handed back"} the chat with ${p.name ?? "a patient"}` });
   if (!paused) await appendToChat(patientId, "[Front desk] (handed the chat back to Sara)"); // Sara sees that staff finished
@@ -58,7 +59,7 @@ export async function staffReply(patientId: string, form: FormData): Promise<str
       return "WhatsApp did not accept the message. Try again.";
     }
   }
-  await Promise.all([
+  const [{ error: logError }] = await Promise.all([
     sb.from("messages").insert({ clinic_id: patient.clinic_id, patient_id: patient.id, channel: patient.wa_id ? "whatsapp" : "web", role: "staff", body: text }),
     // A staff reply keeps the chat paused and tells Sara what was said, for when she takes it back.
     sb.from("conversations").update({ bot_paused: true, updated_at: new Date().toISOString() }).eq("patient_id", patient.id),
@@ -66,7 +67,7 @@ export async function staffReply(patientId: string, form: FormData): Promise<str
     logEvent(sb, { clinicId: patient.clinic_id, patientId: patient.id, actor: "staff", kind: "staff_reply", summary: `Replied to ${patient.name ?? "a patient"}` }),
   ]);
   refresh();
-  return null;
+  return logError ? "Sent, but it could not be saved to the transcript." : null;
 }
 
 const STATUSES = ["booked", "completed", "no_show", "cancelled"];
@@ -87,11 +88,12 @@ export async function setVisitStatus(id: string, status: string) {
 }
 
 export async function savePatient(id: string, form: FormData) {
-  const field = (k: string) => String(form.get(k) ?? "").trim() || null;
+  const field = (k: string) => String(form.get(k) ?? "").trim().slice(0, k === "notes" ? 4000 : 200) || null;
   const tags = String(form.get("tags") ?? "")
     .split(",")
     .map((t) => t.trim().toLowerCase())
-    .filter(Boolean);
+    .filter(Boolean)
+    .slice(0, 20);
   const sb = await supabaseServer();
   const { error } = await sb.from("patients").update({ name: field("name"), phone: field("phone"), email: field("email"), notes: field("notes"), tags: [...new Set(tags)] }).eq("id", id);
   if (error) throw new Error("Could not save the patient.");
@@ -99,6 +101,10 @@ export async function savePatient(id: string, form: FormData) {
 }
 
 // ---------------------------------------------------------------- front desk booking (same engine as Sara, through RLS)
+
+// Desk inputs arrive as a public POST: a bad date or time must be a clear error, not a RangeError deep in the slot engine.
+const okSlot = (v: { date: string; time?: string }) => /^\d{4}-\d{2}-\d{2}$/.test(v.date) && !Number.isNaN(Date.parse(v.date)) && (v.time === undefined || /^([01]\d|2[0-3]):[0-5]\d$/.test(v.time));
+const BAD_SLOT = { ok: false, reason: "unavailable", error: "Pick a valid date and time." } as const;
 
 async function current() {
   const { sb, clinic } = await desk();
@@ -117,11 +123,13 @@ export type DeskResult = BookResult & { error?: string };
 const withCopy = (r: BookResult): DeskResult => (r.ok ? r : { ...r, error: STAFF_COPY[r.reason] });
 
 export async function freeTimes(q: { serviceId: string; date: string; dentistId?: string | null; ignoreId?: string }): Promise<Free[]> {
+  if (!okSlot(q)) return [];
   const { sb, clinic } = await current();
   return (await availability(sb, clinic, { ...q, from: q.date, days: 1 }))[q.date] ?? [];
 }
 
 export async function bookForPatient(v: { patientId: string; serviceId: string; date: string; time: string; dentistId?: string | null }): Promise<DeskResult> {
+  if (!okSlot(v)) return BAD_SLOT;
   const { sb, clinic } = await current();
   const r = withCopy(await bookVisit(sb, clinic, { ...v, source: "staff", actor: "staff" }));
   if (r.ok) refresh();
@@ -129,6 +137,7 @@ export async function bookForPatient(v: { patientId: string; serviceId: string; 
 }
 
 export async function moveForPatient(v: { id: string; date: string; time: string; dentistId?: string | null }): Promise<DeskResult> {
+  if (!okSlot(v)) return BAD_SLOT;
   const { sb, clinic } = await current();
   const r = withCopy(await moveVisit(sb, clinic, { ...v, actor: "staff" }));
   if (r.ok) refresh();
@@ -137,7 +146,7 @@ export async function moveForPatient(v: { id: string; date: string; time: string
 
 export async function cancelForPatient(id: string) {
   const { sb, clinic } = await current();
-  await cancelVisit(sb, clinic, id, "staff");
+  await cancelVisit(sb, clinic, id, "staff"); // a visit that is no longer booked stays as it is; refresh shows its real status
   refresh();
 }
 
@@ -168,4 +177,14 @@ export async function searchPatients(q: string): Promise<{ id: string; name: str
     .or(digits.length >= 3 ? `name.ilike.%${term}%,phone.ilike.%${digits}%,wa_id.ilike.%${digits}%` : `name.ilike.%${term}%`)
     .order("name").limit(8);
   return data ?? [];
+}
+
+// Any signed-in user changes their own password. Supabase may ask for a fresh sign-in first; its message is shown as is.
+export async function changePassword(_: string | null, form: FormData): Promise<string | null> {
+  const password = String(form.get("password") ?? "");
+  if (password.length < 8 || password.length > 72) return "Use 8 to 72 characters.";
+  if (password !== String(form.get("confirm") ?? "")) return "The two passwords do not match.";
+  const sb = await supabaseServer();
+  const { error } = await sb.auth.updateUser({ password });
+  return error ? error.message : "saved";
 }

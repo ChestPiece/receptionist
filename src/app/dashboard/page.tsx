@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { stillPaused } from "@/lib/agent";
 import { deskConfig } from "@/lib/clinics";
 import { desk, deskSetup, weekStart, who } from "@/lib/dashboard";
-import { localDate, localTime } from "@/lib/slots";
+import { isOpenAt, localDate, localTime } from "@/lib/slots";
 import { cn } from "@/lib/utils";
 import { PageBody, PageHeader } from "./page-frame";
 import { NewBooking } from "./schedule";
@@ -27,7 +27,7 @@ export default async function Today() {
   const [{ data: visits }, { data: week }, { data: paused }, clinic] = await Promise.all([
     sb.from("appointments").select("id, service, starts_at, status, source, created_at, dentist_id, patient_id, patients!inner(name, phone, wa_id, is_test)")
       .eq("patients.is_test", false).eq("clinic_id", picked.id).neq("status", "cancelled").gte("starts_at", utc(today)).lt("starts_at", dayEnd).order("starts_at"),
-    sb.from("appointments").select("source, status, created_at, starts_at, patients!inner(is_test)").eq("patients.is_test", false).eq("clinic_id", picked.id).or(`created_at.gte.${weekFrom},starts_at.gte.${weekFrom}`),
+    sb.from("appointments").select("source, status, created_at, starts_at, service_id, patients!inner(is_test)").eq("patients.is_test", false).eq("clinic_id", picked.id).or(`created_at.gte.${weekFrom},starts_at.gte.${weekFrom}`),
     sb.from("conversations").select("patient_id, bot_paused, updated_at, patients!inner(clinic_id, name, phone, wa_id, is_test)")
       .eq("patients.clinic_id", picked.id).eq("patients.is_test", false).eq("bot_paused", true).order("updated_at", { ascending: false }),
     deskConfig(sb, picked.id),
@@ -36,7 +36,14 @@ export default async function Today() {
   const rows = (visits ?? []) as unknown as Row[];
   const waiting = ((paused ?? []) as unknown as { patient_id: string; bot_paused: boolean; updated_at: string; patients: Person }[]).filter((c) => stillPaused(c));
   const w = week ?? [];
-  const bySara = w.filter((a) => a.source !== "staff" && a.created_at >= weekFrom).length;
+  const saraWeek = w.filter((a) => a.source !== "staff" && a.created_at >= weekFrom && a.status !== "cancelled");
+  const bySara = saraWeek.length;
+  // The proof for the owner: what Sara's bookings are worth, and how many came in while the clinic was closed.
+  const price = new Map(clinic.services.map((s) => [s.id, s.price_aed ?? 0]));
+  const aed = saraWeek.reduce((sum, a) => sum + (price.get(a.service_id ?? "") ?? 0), 0);
+  const hoursSet = Object.values(clinic.hours ?? {}).some((w) => w?.length); // no hours set: "after hours" means nothing
+  const afterHours = saraWeek.filter((a) => !isOpenAt(new Date(a.created_at), clinic.hours, off)).length;
+  const saraNote = bySara ? [aed ? `≈ AED ${aed.toLocaleString("en-US")}` : "", hoursSet ? `${afterHours} after hours` : ""].filter(Boolean).join(" · ") || undefined : undefined;
   const noShows = w.filter((a) => a.status === "no_show" && a.starts_at >= weekFrom && a.starts_at < dayEnd).length;
   const multi = clinic.dentists.filter((d) => d.active).length > 1;
   const groups = multi
@@ -51,7 +58,7 @@ export default async function Today() {
       <PageBody className="gap-3 overflow-y-auto p-3 sm:p-4 lg:overflow-hidden">
         <div className="grid shrink-0 grid-cols-2 gap-3 lg:grid-cols-4">
           <Stat label="Visits today" value={rows.length} />
-          <Stat label="Booked by Sara this week" value={bySara} />
+          <Stat label="Booked by Sara this week" value={bySara} note={saraNote} />
           <Stat label="Needs staff" value={waiting.length} alert={waiting.length > 0} href="/dashboard/inbox?f=staff" />
           <Stat label="No-shows this week" value={noShows} />
         </div>
@@ -85,7 +92,7 @@ export default async function Today() {
                     <li key={r.id} className={cn("flex items-center gap-3 px-4 py-2", r.status === "no_show" && "opacity-60")}>
                       <span className="w-11 shrink-0 font-mono text-xs tabular-nums">{localTime(new Date(r.starts_at), off)}</span>
                       <Link href={`/dashboard/patients/${r.patient_id}`} className="min-w-0 flex-1 truncate text-sm hover:underline">
-                        <span className="font-medium">{who(r.patients)}</span> <span className="text-muted-foreground">· {r.service}</span>
+                        <span className="font-medium max-sm:block max-sm:truncate">{who(r.patients)}</span> <span className="text-muted-foreground max-sm:block max-sm:truncate max-sm:text-xs"><span className="max-sm:hidden">· </span>{r.service}</span>
                       </Link>
                       {r.status === "booked" ? (
                         <span className="flex shrink-0 gap-1">
@@ -107,11 +114,12 @@ export default async function Today() {
   );
 }
 
-function Stat({ label, value, alert, href }: { label: string; value: number; alert?: boolean; href?: string }) {
+function Stat({ label, value, alert, href, note }: { label: string; value: number; alert?: boolean; href?: string; note?: string }) {
   const body = (
     <>
-      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="block text-xs leading-snug text-muted-foreground">{label}</span>
       <strong className={cn("block text-2xl font-semibold tracking-tight tabular-nums", alert && "text-alert")}>{value}</strong>
+      {note && <span className="block truncate font-mono text-xs text-muted-foreground tabular-nums">{note}</span>}
     </>
   );
   const cls = "rounded-xl border bg-card px-4 py-3";

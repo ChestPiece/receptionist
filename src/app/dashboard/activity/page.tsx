@@ -11,7 +11,7 @@ export const metadata = { title: "Activity" };
 
 const PAGE = 50;
 const ACTORS = ["sara", "staff", "system", "reviewer"] as const;
-const KINDS = ["booked", "moved", "cancelled", "book_failed", "confirmed", "handoff", "takeover", "handback", "staff_reply", "arrived", "no_show", "reminder", "followup"];
+const KINDS = ["booked", "moved", "cancelled", "book_failed", "confirmed", "handoff", "takeover", "handback", "staff_reply", "arrived", "no_show", "reminder", "followup", "contact", "review", "review_skipped"];
 const DAY = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
 type Row = { id: string; actor: string; kind: string; level: string; summary: string; created_at: string; patient_id: string | null; patients: { name: string | null; phone: string | null; wa_id: string | null; is_test: boolean | null } | null };
 

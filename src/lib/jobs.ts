@@ -7,7 +7,7 @@ import { db, logMessages } from "./db";
 import { logEvent, visitSummary } from "./events";
 import { availability } from "./booking";
 import { localDate, localTime, toUtc } from "./slots";
-import { sendText } from "./whatsapp";
+import { sendTemplate, sendText } from "./whatsapp";
 
 const HOUR = 3_600_000;
 const MIN_LEAD_MS = 30 * 60_000; // a reminder this close to the visit is noise
@@ -96,9 +96,15 @@ export async function appendToChat(patientId: string, text: string) {
   if (error) console.error("[outbound history]", error.message);
 }
 
-async function send(clinic: Clinic, to: string, text: string, patientId: string, kind: "reminder" | "followup", summary: string, appointmentId?: string) {
+const firstName = (name: string | null) => name?.trim().split(/\s+/)[0] || "there";
+
+// Meta delivers only approved templates outside its 24 h window, so a Meta clinic with a template set sends that;
+// the full bilingual text still goes into the history, so Sara understands the "1" or "2" reply.
+async function send(clinic: Clinic, to: string, text: string, patientId: string, kind: "reminder" | "followup", summary: string, params: string[], appointmentId?: string) {
+  const wa = clinic.wa!;
+  const template = wa.provider === "meta" ? clinic.meta_templates?.[kind] : undefined;
   try {
-    await sendText(clinic.wa!, to, text);
+    await (wa.provider === "meta" && template ? sendTemplate(wa, to, template, params) : sendText(wa, to, text));
   } catch (e) {
     console.error(`[${kind}]`, (e as Error).message);
     return false;
@@ -139,10 +145,12 @@ async function sendReminders(clinic: Clinic, now: Date, budget: number) {
     if (!claimed.length) continue;
     const patient = v.patients as unknown as { wa_id: string | null; name: string | null };
     if (!patient.wa_id) continue; // web chat patient: no WhatsApp to remind on. ponytail: email/SMS reminders later
-    const text = reminderText({ name: patient.name, service: v.service, startsAt: new Date(v.starts_at), clinic: clinic.name, offsetMin: clinic.utc_offset_minutes, dentist: clinic.dentists.filter((d) => d.active).length > 1 ? clinic.dentists.find((d) => d.id === v.dentist_id)?.name : null });
+    const dentist = clinic.dentists.filter((d) => d.active).length > 1 ? clinic.dentists.find((d) => d.id === v.dentist_id)?.name : null;
+    const text = reminderText({ name: patient.name, service: v.service, startsAt: new Date(v.starts_at), clinic: clinic.name, offsetMin: clinic.utc_offset_minutes, dentist });
     const at = new Date(v.starts_at);
     const summary = visitSummary(`Sent ${kind} reminder to`, { patient: patient.name, service: v.service, date: localDate(at, clinic.utc_offset_minutes), time: localTime(at, clinic.utc_offset_minutes) });
-    if (await send(clinic, patient.wa_id, text, v.patient_id, "reminder", summary, v.id)) sent++;
+    const params = [firstName(patient.name), dentist ? `${v.service} with ${dentist}` : v.service, clinic.name, when(at, clinic.utc_offset_minutes, "en-US")];
+    if (await send(clinic, patient.wa_id, text, v.patient_id, "reminder", summary, params, v.id)) sent++;
   }
   return sent;
 }
@@ -196,7 +204,7 @@ async function sendFollowups(clinic: Clinic, now: Date, budget: number) {
     const service = guessService(JSON.stringify(convo.history), clinic.services);
     const slot = await nextFree(clinic, service ?? clinic.services[0]?.name, now);
     const text = followupText({ name: patient.name, service, slot, clinic: clinic.name, persona: personaName(clinic) });
-    if (await send(clinic, wa, text, patient.id, "followup", `Sent a follow-up to ${patient.name ?? "a patient"}${service ? ` · ${service}` : ""}`)) sent++;
+    if (await send(clinic, wa, text, patient.id, "followup", `Sent a follow-up to ${patient.name ?? "a patient"}${service ? ` · ${service}` : ""}`, [firstName(patient.name), clinic.name])) sent++;
   }
   return sent;
 }

@@ -3,8 +3,6 @@
 @import "shadcn/tailwind.css";
 
 @custom-variant dark (&:is(.dark *));
-/* Same breakpoint FrameSequence uses to pick the portrait film cut. */
-@custom-variant portrait-film (@media (max-aspect-ratio: 4/5));
 
 @theme inline {
     --font-heading: var(--font-serif);
@@ -19,7 +17,7 @@
     --color-success: var(--success);
     --color-success-foreground: var(--success-foreground);
     --font-mono: var(--font-geist-mono), ui-monospace, monospace;
-    --font-display: var(--font-newsreader), Georgia, serif; /* landing H1/H2 and film captions only (style-lock amendment 2026-11-01) */
+    --font-display: var(--font-newsreader), Georgia, serif; /* landing H1/H2, entry titles and step numbers only (style-lock amendments 2026-11-01, 2026-11-03) */
     --color-dawn: var(--dawn);
     --color-dawn-deep: var(--dawn-deep);
     --color-panel: var(--panel);
@@ -256,8 +254,9 @@
 }
 
 @layer components {
-/* Night scope: re-points the shared tokens, so buttons, the logo and text work unchanged on a night surface. Marketing pages only. */
-.night {
+/* Night scope: re-points the shared tokens, so buttons, the logo and text work unchanged on a night surface. Marketing pages only.
+   The desk log's night sky (`.desk[data-sky=night]`) is the same scope, switched by scroll. */
+.night, .desk[data-sky="night"] {
   --background: var(--night);
   --foreground: var(--night-foreground);
   --card: color-mix(in oklab, var(--night-foreground) 4%, var(--night));
@@ -277,34 +276,34 @@
 
 /* Day scope: the landing body is morning in both themes (the story owns the colours, not the toggle). Light :root values. */
 .day {
-  --background: #fafaf9;
-  --foreground: #0c0a09;
-  --card: #ffffff;
-  --card-foreground: #0c0a09;
-  --popover: #ffffff;
-  --popover-foreground: #0c0a09;
+  --background: #f7f3ea;
+  --foreground: #1c1a15;
+  --card: #fffdf8;
+  --card-foreground: #1c1a15;
+  --popover: #fffdf8;
+  --popover-foreground: #1c1a15;
   --primary: #4f6f5c;
   --primary-foreground: #ffffff;
-  --secondary: #f5f5f4;
-  --secondary-foreground: #0c0a09;
-  --muted: #f5f5f4;
-  --muted-foreground: #6b6560;
-  --accent: #eef3ef;
+  --secondary: #efe9dc;
+  --secondary-foreground: #1c1a15;
+  --muted: #efe9dc;
+  --muted-foreground: #6a6254;
+  --accent: #e6ede4;
   --accent-foreground: #3e5a49;
   --alert: #ad4320;
-  --alert-soft: #f4dccf;
-  --sage-soft: #dfe8df;
+  --alert-soft: #f6dccb;
+  --sage-soft: #dde7da;
   --web: #33506e;
-  --web-soft: #dbe3eb;
+  --web-soft: #dde4e8;
   --success: #4f6f5c;
   --success-foreground: #ffffff;
-  --border: #e7e5e4;
-  --rule: #f0eeec;
-  --input: #e7e5e4;
+  --border: #e3dbc9;
+  --rule: #ece6d8;
+  --input: #e3dbc9;
   --ring: color-mix(in oklab, #4f6f5c 55%, transparent);
-  --panel: #f5f5f4;
+  --panel: #efe9dc;
   --sand: #e9c9a8;
-  --shadow-slip: 0 1px 2px rgb(12 10 9 / 0.05);
+  --shadow-slip: 0 1px 2px rgb(60 45 20 / 0.06);
   --night: #0d1210;
   background-color: var(--background);
   color: var(--foreground);
@@ -313,20 +312,23 @@
 
 /* A lit phone screen on a night surface: light card tokens in both themes. */
 .screen {
-  --background: #fafaf9;
-  --foreground: #0c0a09;
-  --card: #ffffff;
-  --card-foreground: #0c0a09;
-  --muted: #f5f5f4;
-  --muted-foreground: #6b6560;
-  --border: #e7e5e4;
+  --background: #f7f3ea;
+  --foreground: #1c1a15;
+  --card: #fffdf8;
+  --card-foreground: #1c1a15;
+  --muted: #efe9dc;
+  --muted-foreground: #6a6254;
+  --border: #e3dbc9;
+  --rule: #ece6d8;
   --primary: #4f6f5c;
   --primary-foreground: #ffffff;
-  --sage-soft: #dfe8df;
+  --accent-foreground: #3e5a49;
+  --sage-soft: #dde7da;
   --success: #4f6f5c;
   --success-foreground: #ffffff;
   --web: #33506e;
   --alert: #ad4320;
+  --alert-soft: #f6dccb;
   color: var(--foreground);
 }
 }
@@ -354,17 +356,20 @@
 .horizon[data-top] { scale: 1 -1; }
 .horizon { animation: fade-up 1200ms cubic-bezier(0.16, 1, 0.3, 1) 300ms both; }
 
-/* Night film. --p is the scrub progress (0 to 1) from the frame sequence; each caption shows between its --a and --b. */
-.film { --p: 0; }
-.film-cap { --show: clamp(0, min((var(--p) - var(--a)) * 14, (var(--b) - var(--p)) * 14), 1);
-  opacity: var(--show); translate: 0 calc((1 - var(--show)) * 12px); }
-/* A scrim behind the captions while it is night (left column, or the bottom band in portrait); it lifts at morning. */
-.film-scrim { background: linear-gradient(to right, color-mix(in oklab, var(--night) 70%, transparent), transparent 45%);
-  opacity: clamp(0, (0.72 - var(--p)) * 6, 1); }
-@media (max-aspect-ratio: 4/5) {
-  .film-scrim { background: linear-gradient(to top, color-mix(in oklab, var(--night) 70%, transparent), transparent 45%); }
-}
-@media (prefers-reduced-motion: reduce) { .film { --p: 1 !important; } }
+/* The desk log: the sky follows the active hour (day, dusk, night, dawn). Colours only, 600 ms, so the change reads as light. */
+.desk { background-color: var(--background); color: var(--foreground);
+  transition: background-color 600ms cubic-bezier(0.22, 1, 0.36, 1), color 600ms cubic-bezier(0.22, 1, 0.36, 1); }
+.desk[data-sky="dusk"] { --background: #ece2cf; }
+.desk[data-sky="dawn"] { --background: #f4e6d2; }
+.desk[data-sky="night"] time { color: var(--dawn); }
+/* Phones: the sticky clock is a bar over the entries, so it carries the sky. */
+.desk-clock { background-color: var(--background); transition: background-color 600ms cubic-bezier(0.22, 1, 0.36, 1); }
+@media (min-width: 64rem) { .desk-clock { background-color: transparent; } }
+@media (prefers-reduced-motion: reduce) { .desk, .desk-clock { transition: none; } }
+
+/* Tagline: each word fills from muted to ink as the scroll reaches it (WordReveal). */
+.word { transition: color 400ms cubic-bezier(0.22, 1, 0.36, 1); }
+.word.dim { color: color-mix(in oklab, var(--foreground) 28%, var(--background)); }
 
 /* The overnight booking on the week calendar: a soft dawn halo, the one highlight of the How it works section. */
 .booked-glow { box-shadow: 0 0 0 2px var(--background), 0 0 0 3px var(--dawn), 0 8px 24px -8px color-mix(in oklab, var(--dawn) 80%, transparent); }

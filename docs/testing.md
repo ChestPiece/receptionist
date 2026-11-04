@@ -34,3 +34,9 @@ Log in at `http://localhost:3000/login` (`bun run dev`) or on prod at `/login`.
 ## Resetting
 - New web chat: "New chat" in the chat sidebar, or clear the site's localStorage.
 - Reset a WhatsApp test chat: delete its `conversations` row in Supabase.
+
+## New clinic (concierge onboarding)
+- Copy `scripts/new-clinic.example.json`, fill in the clinic (keep fake data until UAE hosting is live), then run `bun scripts/new-clinic.ts my-clinic.json`.
+- It creates or updates the clinic by slug (services and dentists matched by name, nothing deleted) and adds owner and staff logins without passwords.
+- The owner signs in on `/login` with "Email me a sign-in link", then sets a password under Account.
+- WhatsApp is not set up by the script; wire it per clinic when a number exists.

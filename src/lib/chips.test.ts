@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { icsFor, markerOf, splitChips, toolChips } from "./chips";
+import { fallbackChips, hasMarker, icsFor, markerOf, splitChips, toolChips } from "./chips";
 
 describe("splitChips", () => {
   it("parses a complete marker and strips it", () => {
@@ -65,5 +65,18 @@ describe("icsFor", () => {
     expect(ics).toContain("DTEND:20261103T163000");
     expect(ics).toContain("SUMMARY:Filling");
     expect(ics).toContain("LOCATION:Dubai");
+    expect(ics).toMatch(/DTSTAMP:\d{8}T\d{6}Z/); // RFC 5545: DTSTAMP is UTC
+  });
+  it("a late visit ends on the next day, not before it starts", () => {
+    expect(icsFor({ service: "Filling", date: "2026-12-31", time: "23:45" })).toContain("DTEND:20270101T001500");
+  });
+});
+
+describe("fallback chips", () => {
+  it("only a missing marker gets the fallback; an empty marker means no chips", () => {
+    expect(hasMarker("Sure!\n[[chips: ]]")).toBe(true);
+    expect(hasMarker("Sure!")).toBe(false);
+    expect(fallbackChips(false).map((c) => c.label)).toEqual(["Book a visit", "Prices", "Talk to the front desk"]);
+    expect(fallbackChips(true).every((c) => c.label && /[؀-ۿ]/.test(c.label))).toBe(true);
   });
 });

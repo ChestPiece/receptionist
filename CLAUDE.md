@@ -16,7 +16,8 @@ WhatsApp AI receptionist for UAE dental clinics (Dubai first), English + Arabic.
 
 ## Rules
 - The owner's phone number and all keys stay in `.env.local` only, never in tracked files.
-- Commit only when asked. GitHub: `ChestPiece/clinic-whatsapp-bot` (private), branch `master`.
+- Commit only when asked. GitHub: `ChestPiece/receptionist` (private).
+- Branches (2026-11-04): only two. `dev` is the working branch: all work and pushes go there. `master` is production: touch it only when the owner asks to release (merge `dev` into `master`). No other branches.
 - Vercel deploys every push to `master` to production. Paste a new migration before pushing code that needs it.
 - Ask before any Supabase write; the owner runs SQL in the SQL editor.
 
@@ -45,21 +46,48 @@ Package manager is **bun** (`bun.lock` only, no `package-lock.json`). Use `bun i
 - Env vars `CLINIC_ID`, `ULTRAMSG_INSTANCE_ID`, `ULTRAMSG_TOKEN`, `STAFF_WHATSAPP` and `WEBHOOK_SECRET` are no longer read. `ALLOWED_SENDERS` is still a global env allowlist.
 - Code: `src/lib/clinics.ts` (loaders, 60 s cache), `src/lib/sara.ts` (agent brain shared by all channels: tools, prompt, `runSara`), `src/lib/agent.ts` (WhatsApp channel handler).
 - Every patient/assistant/outbound turn also goes to `messages` (readable transcript for the inbox); token use per run goes to `usage_events`.
+- Sara's context carries an explicit `channel` (`"whatsapp" | "web"`); prompt rules and tools branch on it, never on `waId` being null. The voice phase adds `"voice"` (a caller has a number but no WhatsApp id).
+- Reviewer (`src/lib/reviewer.ts`, gpt-5-mini, reasoning effort `low`, 15 s timeout) runs after the reply on risky turns. It gets the last 12 history items (`earlierTurns`), so a time backed by an earlier `find_slots` is not flagged. `ok: true` logs nothing; a timeout or error logs a `review_skipped` warn event on Activity.
+
+## Official WhatsApp (Meta Cloud API, 2026-11-04, `0013_meta_whatsapp.sql`)
+- Per clinic `clinics.wa_provider` = `ultramsg` (default, demos/testing) or `meta` (paying clinics). `toClinic` builds `clinic.wa` as a tagged `WaCreds`; the Meta token is `clinic_secrets.meta_token`, the number is `clinics.meta_phone_number_id`.
+- `src/lib/whatsapp.ts` keeps chat ids as `9715…@c.us` app-wide; the Meta adapter strips/adds `@c.us`. `markRead` takes the message id (Meta marks by id). Voice notes: Meta gives a media id, `fetchMedia` downloads it with the token, only from Meta hosts (`metaMediaHost`).
+- Webhook `/api/whatsapp/meta`: GET verify (`META_VERIFY_TOKEN`), POST checks `X-Hub-Signature-256` with `META_APP_SECRET` (one Meta app for all clinics), payload `phone_number_id` picks the clinic, always 200 once signed.
+- Meta only delivers templates outside its 24 h window: reminders and follow-ups use `clinics.meta_templates` (`reminder`: params name, service, clinic, time; `followup`: name, clinic) when set, else free text (fails outside the window). Staff handoff alerts are still free text.
+- Not yet: coexistence (Embedded Signup on the clinic's existing number) and staff echo webhooks pausing Sara.
 
 ## Web chat (P1, first cut)
 - `/chat/[slug]` (shadcn + AI Elements, `useChat`) talks to `POST /api/chat`, which streams the same Sara agent (`streamSara`) through `createAiSdkUiMessageStreamResponse`. History lives server side in `conversations`, like WhatsApp; the client sends only its newest message.
 - Visitor = anonymous id in localStorage, stored as `patients.web_visitor_id` (`wa_id` is null). Sara asks for a mobile number before a web booking or handoff; web handoff pauses the chat and alerts staff on WhatsApp (when `staff_whatsapp` is set) with a callback number. While paused, the visitor polls `GET /api/chat` every 4 s and sees staff replies.
 - Tool results are structured (`find_slots`, `book`), so the chat draws tappable time buttons and a booking card.
+- Quick-reply chips (`src/lib/chips.ts`): Sara ends each web reply with a hidden `[[chips: a | b]]` line, worded per step (service names, Earliest/Tomorrow/…, "Yes, book it | Change time", empty when asking for name/number). `chipsFor` in `chat.tsx` picks, in order: chips for the card a tool just drew (slots: "Other day"; booking: calendar/another/reschedule), then the marker, then fallback chips when the marker is missing entirely. Fixed replies (emergency, rate limit, errors) carry an empty marker, so they get no chips.
+- Leads (2026-11-03): the `save_contact` tool writes the visitor's name and number to their patient row the moment they type them, before any booking (`cleanName` strips "its"/"my name is", `cleanPhone` stores a UAE mobile as `9715…` and keeps a foreign number as digits; only empty fields are filled). It logs a `contact` event on Activity. Handoff `callback_phone` is saved the same way. The prompt shows the phone on file so Sara does not ask twice.
+- Composer: the AI Elements `PromptInputBody` wraps the textarea in `display: contents`, so the shadcn `has-[>textarea]:h-auto` never matches; `chat.tsx` forces `h-auto` on the input group so it grows (max 192 px).
 - Chat history comes back after a reload (`GET /api/chat`). Not yet: embeddable `widget.js` + `allowed_origins` check, per-IP rate limit, reminders for web patients.
 - UI components are vendored by the shadcn (`new-york`, Radix) and AI Elements CLIs in `src/components/{ui,ai-elements}` and skipped by ESLint.
+
+## Voice call (web, 2026-11-04)
+- "Call Sara" in the web chat header. The browser holds a WebRTC call to OpenAI Realtime (`OPENAI_REALTIME_MODEL`, default `gpt-realtime-2.1-mini`; voice `OPENAI_REALTIME_VOICE`, default `marin`; reasoning `low`, `semantic_vad`). Client: `src/app/chat/[slug]/call.tsx`, raw data-channel events, no SDK.
+- Routes (same trust as `/api/chat`: clinic by slug, patient by `visitorId`; helpers in `src/lib/visitor.ts`):
+  - `POST /api/voice`: creates the call (`/v1/realtime/calls`) with the voice prompt (`buildInstructions(..., "voice")`), the last chat turns (`spokenHistory`) and `toolSchemas()`. Refuses a paused chat (409) and over-limit visitors (429: `RATE_MAX` messages, or 3 calls per hour counted from `agent_events` kind `call`). The key and prompt never reach the browser.
+  - `POST /api/voice/tool`: runs one tool via `runTool` (channel `voice`). Voice tools = `voiceTools`: no `save_contact`/`book_many`; `book` needs `read_back_confirmed: true`, else it returns `READ_BACK`.
+  - `POST /api/voice/turn`: saves each finished turn to `messages` (channel `voice`, inbox tag "Call") and Sara's history, so typed chat after a call knows what was said. A caller turn gets the emergency check; on a hit the browser cancels Sara's reply and makes her say the fixed one.
+- Caps: 8 min per call, hang up after 45 s without caller speech, hang up on page hide.
+- Needs `0010_voice.sql` (allows `'voice'` in the `messages` and `usage_events` channel checks). Without it, voice transcripts fail to log; the call still works.
+- `spikes/voice/` (untracked) is the A/B test bench on 127.0.0.1:8787.
+
+## Review hardening (2026-11-04, `0011_review.sql`)
+- Rate limits use the `hit(key, max, window_s)` RPC (`allow()` in `src/lib/db.ts`, atomic via advisory lock, table `rate_hits`). Keys: `chat-ip` 60/10 min, `chat-v` per visitor `RATE_MAX`/10 min, `call-ip` 6/h, `call-clinic` 60/h, `voice:<patient>` 150 tool+turn posts/10 min, `handoff:<clinic>` 20 staff alerts/h, `emerg:<clinic>:<from>` 3 emergency replies/10 min while flood-limited. `allow()` fails open (logs `[rate]`) until 0011 is pasted.
+- `unforge()` (`safety.ts`) strips a leading `[Front desk]` / `[voice note]` from patient text on every channel; only assistant-role `[Front desk]` turns are staff.
+- `safeNext()` guards the login and magic-link redirects. 0011 also ties staff message/event inserts to a patient of the same clinic and revokes default grants on the early tables.
+- Skipped on purpose: webhook/cron secrets stay in the query string (UltraMsg has no header option), RLS policy perf rewrites (no scale yet).
 
 ## Design (clean SaaS, 2026-10-25, replaces "The Ledger")
 - **Brand guidelines are locked in `.tastemaker/style-lock.md`. Read it before any UI work and follow it; change it only when Anas asks.**
 - Neutral stone palette + sage `--primary`, blue `--web`, red `--alert` (tokens in `src/app/globals.css`). Geist (UI + headings), Geist Mono (sparing), Readex Pro for Arabic. No paper texture. `.slip` now means a plain card; `.torn-top` is a no-op kept for old dashboard markup.
 - Logo: the `Receptionist Agent.` wordmark (Newsreader, red full stop). Always use `<Logo />` from `src/components/logo.tsx`; Newsreader is loaded only for it (`.wordmark` utility).
 - Landing (2026-10-26): hero with EN/عربي demo replay, pinned "night shift" story (`NightShift` in `src/components/landing.tsx`: chat books a visit, Flip flies it into the calendar), hairline features, safety list. GSAP only via `src/lib/gsap.ts`.
-- Landing night redesign (2026-10-31, spec `docs/superpowers/specs/2026-10-30-landing-redesign-design.md`): night hero (`.night` token scope, PatternWaves dots in `src/components/pattern-waves.tsx` loaded lazily through `NightWaves`, CSS glow `Horizon`), lit white hero chat (`.screen` scope) in both themes, pinned night film (`NightFilm`, `FrameSequence`, frames in `public/frames/film/`, source in `motion/night-film/`; replaced the old `Bridge` on 2026-11-01), night close band and footer. Night stays night in both themes; rules in the style-lock amendment.
-- Night film responsive rules (2026-11-01): two cuts of the same 5 s / 150-frame shot. `lg` = 1920x1080 landscape (`motion/night-film/`, every frame), `pt` = 720x1280 portrait (`motion/night-film-portrait/`, every 2nd frame). `FrameSequence` picks `pt` when `(max-aspect-ratio: 4/5)` matches (phones, upright tablets), else `lg`, and draws with cover-crop. So each composition keeps its phone at about 60% (landscape) or 50% (portrait) of frame height, with plain sky at the edges. Landscape keeps the left 40% clear for captions; portrait keeps the bottom 35% clear. The Tailwind variant `portrait-film:` (globals.css) uses the same breakpoint for the caption layout. The pin is 2.5 viewport heights (`FILM_LENGTH`). Caption windows (`CAPTIONS` `a`/`b`) follow the beat comment at the top of the composition's GSAP block, so change both together. Rebuild frames: `npm run render` in each motion folder, then `node scripts/frames-to-webp.mjs`. Test live at 1366x560, 1440x900 and 375x812 in ego lite: the browser pane pauses animation while hidden.
+- Landing desk log (2026-11-03, replaces the night hero and night film; rules in the style-lock amendment 2026-11-03): cream hero with the live chat replay (`src/components/landing-hero.tsx`), then `DeskLog` (sticky clock 18:00 to 09:00, five hour entries with real product pieces, sky day/dusk/night/dawn), `Setup`, safety list, `WordReveal` tagline, FAQ (+ FAQPage JSON-LD), night close band and footer. Lenis smooth scroll via `SmoothScroll` (landing only). Main CTA "Book a 15 min demo call" reads `NEXT_PUBLIC_DEMO_CALL_URL` (falls back to the demo chat). `/privacy`, `/terms` and the 404 share `src/components/plain-page.tsx`.
 - Chat: left collapsible sidebar (Back to site, New chat, clinic hours/services/location in `<details>`), left sheet on phones; starter questions sit under the greeting in the empty state.
 - Login: split layout, form left, static "while you were closed" sample right (desktop only).
 - Dashboard: page titles `text-3xl font-semibold`, no GSAP, no uppercase labels. Responsive grids need `grid-cols-1` as the base so wide children (calendar) cannot push past the phone width.
