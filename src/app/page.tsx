@@ -6,7 +6,7 @@ import { Hero, Horizon } from "@/components/landing-hero";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 
-const DEMO = "/chat/sample-smile";
+const DEMO = "/demo"; // the live demo: chat + front desk view on the sandbox clinic
 // The demo call: a booking page or a wa.me link to a business number (public, it ships in the page). Unset: the demo chat.
 const CALL = process.env.NEXT_PUBLIC_DEMO_CALL_URL || DEMO;
 

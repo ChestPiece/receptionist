@@ -266,6 +266,8 @@ type ChatProps = {
   logo?: string;
   test?: boolean;
   info: Info;
+  embedded?: boolean; // inside another page (the /demo split view): no sidebar, the host page has its own frame
+  starters?: string[]; // starter chips for the empty chat (default CHIPS)
 };
 
 type Line = { id: string; role: string; text: string };
@@ -274,8 +276,8 @@ const feed = (slug: string, id: string, after = 0): Promise<Feed | null> =>
   fetch(`/api/chat?slug=${encodeURIComponent(slug)}&visitorId=${id}${after ? `&after=${after}` : ""}`)
     .then((r) => (r.ok ? r.json() : null))
     .catch(() => null);
-// Staff replies show as assistant turns; the "s" id prefix labels them as the front desk.
-const toUi = (m: Line): UIMessage => ({ id: `${m.role === "staff" ? "s" : "h"}${m.id}`, role: m.role === "patient" ? "user" : "assistant", parts: [{ type: "text", text: m.text }] });
+// Staff replies show as assistant turns; the "staff-" id prefix labels them as the front desk.
+const toUi = (m: Line): UIMessage => ({ id: `${m.role === "staff" ? "staff-" : "h"}${m.id}`, role: m.role === "patient" ? "user" : "assistant", parts: [{ type: "text", text: m.text }] });
 const newest = (ms: Line[], floor: number) => Math.max(floor, ...ms.map((m) => Number(m.id)));
 
 // Render at once; the visitor's earlier messages (text only) are fetched in the background and slotted in when they land.
@@ -288,7 +290,7 @@ export function Chat(props: ChatProps) {
   return <ChatView {...props} id={id} start={start} />;
 }
 
-function ChatView({ slug, clinicName, persona, phone, logo, test, info, id, start }: ChatProps & { id: string; start: { history: UIMessage[]; paused: boolean; lastId: number } | null }) {
+function ChatView({ slug, clinicName, persona, phone, logo, test, info, embedded, starters, id, start }: ChatProps & { id: string; start: { history: UIMessage[]; paused: boolean; lastId: number } | null }) {
   const sample = /\(sample data\)/i.test(clinicName);
   const name = clinicName.replace(/\s*\(sample data\)/i, "");
   const [greeted, setGreeted] = useState(false);
@@ -341,7 +343,7 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, id, star
   }, [paused, check]);
   const send = (text: string) => !busy && text.trim() && sendMessage({ text });
 
-  // Voice call: each finished spoken turn lands in the thread as a bubble (ids start with "c", never "s" = staff).
+  // Voice call: each finished spoken turn lands in the thread as a bubble (ids start with "c", never "staff-").
   const turnNo = useRef(0);
   const call = useCall({
     slug,
@@ -367,8 +369,8 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, id, star
     paused || busy || onCall || typedAt === messages.length
       ? []
       : empty
-        ? greeted ? CHIPS.map((label) => ({ label })) : []
-        : lastMsg?.role === "assistant" && !lastMsg.id.startsWith("s") ? chipsFor(lastMsg, lastUserText) : [];
+        ? greeted ? (starters ?? CHIPS).map((label) => ({ label })) : []
+        : lastMsg?.role === "assistant" && !lastMsg.id.startsWith("staff-") ? chipsFor(lastMsg, lastUserText) : [];
   // Typing anywhere goes to the message box (the keystroke lands there because focus moves during keydown).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -384,15 +386,17 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, id, star
   return (
     // Same collapsible sidebar as the dashboard: pushes the chat aside from 768px up, a sheet on phones.
     <SidebarProvider className="h-full min-h-0" style={{ "--sidebar-width": "18rem" } as CSSProperties}>
-      <Sidebar collapsible="offcanvas">
-        <SidebarBody name={name} sample={sample} logo={logo} persona={persona} info={info} phone={phone} />
-        <SidebarRail />
-      </Sidebar>
+      {!embedded && (
+        <Sidebar collapsible="offcanvas">
+          <SidebarBody name={name} sample={sample} logo={logo} persona={persona} info={info} phone={phone} />
+          <SidebarRail />
+        </Sidebar>
+      )}
 
       <SidebarInset className="min-h-0 min-w-0 overflow-hidden">
         <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b px-3 sm:px-4">
           <div className="flex min-w-0 items-center gap-2.5">
-            <SidebarTrigger className="-ms-1" />
+            {!embedded && <SidebarTrigger className="-ms-1" />}
             <Avatar logo={logo} name={name} letter={persona[0]} className="size-8" />
             <div className="min-w-0 leading-tight">
               <div className="truncate text-sm font-medium">{name}</div>
@@ -455,7 +459,7 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, id, star
                     dir="auto"
                     className="group-[.is-user]:rounded-2xl group-[.is-user]:rounded-ee-sm group-[.is-user]:bg-primary group-[.is-user]:py-2.5 group-[.is-user]:text-primary-foreground"
                   >
-                    {m.id.startsWith("s") && <span className="text-xs font-medium text-muted-foreground">Front desk</span>}
+                    {m.id.startsWith("staff-") && <span className="text-xs font-medium text-muted-foreground">Front desk</span>}
                     {m.parts.map((p, i) =>
                       p.type === "text" ? (
                         m.role === "user" ? (

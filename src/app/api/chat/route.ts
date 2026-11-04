@@ -10,7 +10,7 @@ import { clinicBySlug } from "@/lib/clinics";
 import { allow, db, logMessages, logUsage } from "@/lib/db";
 import { reviewAndLog } from "@/lib/reviewer";
 import { emergencyReply, isEmergency, unforge } from "@/lib/safety";
-import { streamSara } from "@/lib/sara";
+import { replyText, streamSara } from "@/lib/sara";
 import { ipOf, overRateLimit, sameOrigin, upsertVisitor } from "@/lib/visitor";
 
 export const maxDuration = 60;
@@ -94,8 +94,10 @@ export async function POST(req: Request) {
       try {
         await result.completed;
         await logUsage(clinic.id, "web", result.state.usage);
-        await save(result.history.slice(saved.length), result.finalOutput);
-        await reviewAndLog({ clinic, patientId: patient.id, channel: "web", userText: text, reply: result.finalOutput && splitChips(result.finalOutput).text, items: result.newItems, earlier: saved });
+        const items = result.history.slice(saved.length);
+        const reply = replyText(result.finalOutput, items);
+        await save(items, reply);
+        await reviewAndLog({ clinic, patientId: patient.id, channel: "web", userText: text, reply: reply && splitChips(reply).text, items: result.newItems, earlier: saved });
       } catch (e) {
         console.error("[chat]", (e as Error).message);
       }

@@ -5,7 +5,7 @@ import { splitChips } from "./chips";
 import { allow, db, logMessages, logUsage } from "./db";
 import { reviewAndLog } from "./reviewer";
 import { emergencyReply, isEmergency, isStop, stopReply, unforge } from "./safety";
-import { runSara, wroteData } from "./sara";
+import { replyText, runSara, wroteData } from "./sara";
 import { fetchMedia, markRead, sendText, type IncomingMessage, type WaCreds } from "./whatsapp";
 
 // ponytail: keep the last 14 patient turns, cut at a user message so no tool call loses its output. Summarize if long chats matter.
@@ -257,7 +257,8 @@ export async function handleMessage(clinic: Clinic, msg: IncomingMessage) {
     // ponytail: a data-writing run and the newer run can both answer the same pieces; a per-patient lock fixes that if it shows up.
     const [, latestPiece] = await Promise.all([logUsage(clinic.id, "whatsapp", result.state.usage), newestPiece(clinic.id, msg.from)]);
     if (latestPiece !== msg.id && !wroteData(result.newItems)) return;
-    const reply = result.finalOutput ? tidy(result.finalOutput) : null;
+    const said = replyText(result.finalOutput, result.history.slice(saved.length));
+    const reply = said ? tidy(said) : null;
     await Promise.all([answered(), reply && send(reply)]);
     console.log(`[timing] prep=${t1 - t0}ms agent=${t2 - t1}ms send=${Date.now() - t2}ms`);
     // Reply is already out: log failures, don't send an error on top.

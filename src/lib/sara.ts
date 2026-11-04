@@ -330,7 +330,7 @@ const handoff = tool({
 
 const saveContact = tool({
   name: "save_contact",
-  description: "Web chat: save the visitor's name and/or mobile number the moment they give them, before anything else. Pass only the person's name (no 'it's' or 'my name is').",
+  description: "Web chat: save the visitor's name and/or mobile number as soon as their latest message contains one. Never call it with nothing to save. Pass only the person's name (no 'it's' or 'my name is').",
   parameters: z.object({
     patient_name: z.string().nullable().describe("The person's full name only, e.g. 'Chest Piece', not 'its chest piece'"),
     patient_phone: z.string().nullable().describe("Mobile number as typed"),
@@ -459,6 +459,20 @@ const ctx = (clinic: Clinic, p: Patient, waId: string | null, channel: Channel =
 
 export const runSara = (clinic: Clinic, patient: Patient, waId: string | null, input: AgentInputItem[]) =>
   run(receptionist, input, { context: ctx(clinic, patient, waId) });
+
+// The words the patient saw from this run. Newer models write them as "commentary" messages and can end with an empty
+// final answer, so fall back to the last assistant text after the patient's message (never an older turn).
+export function replyText(finalOutput: string | undefined, items: AgentInputItem[]): string | undefined {
+  if (finalOutput?.trim()) return finalOutput;
+  for (const it of [...items].reverse()) {
+    if (!("role" in it)) continue;
+    if (it.role === "user") break;
+    if (it.role !== "assistant" || !Array.isArray(it.content)) continue;
+    const text = (it.content as { type: string; text?: string }[]).map((c) => (c.type === "output_text" ? (c.text ?? "") : "")).join("").trim();
+    if (text) return text;
+  }
+  return undefined;
+}
 
 // Web chat: same agent, streamed.
 export const streamSara = (clinic: Clinic, patient: Patient, input: AgentInputItem[]) =>

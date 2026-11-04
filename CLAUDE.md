@@ -66,6 +66,15 @@ Package manager is **bun** (`bun.lock` only, no `package-lock.json`). Use `bun i
 - Chat history comes back after a reload (`GET /api/chat`). Not yet: embeddable `widget.js` + `allowed_origins` check, per-IP rate limit, reminders for web patients.
 - UI components are vendored by the shadcn (`new-york`, Radix) and AI Elements CLIs in `src/components/{ui,ai-elements}` and skipped by ESLint.
 
+## Starter kit (2026-11-04)
+- `../agent-starter` (own git repo, local only so far) is a generic copy of the chat + voice agent for other projects: edit `src/agent/brand.ts` and `src/agent/config.ts`. It is a copy, not a dependency: this app does not import it, and fixes are ported by hand.
+
+## Public demo (`/demo`, 2026-11-04)
+- The landing's "Try Sara" CTAs open `/demo`: the real `Chat` (`embedded`, demo `starters`) on the left and a live "front desk view" (`src/app/demo/desk.tsx`, polls `GET /api/demo/desk` every 3 s) on the right; tabs on phones. Sandbox clinic slug `demo` (`DEMO_SLUG`, `src/lib/demo.ts`), created from `scripts/demo-clinic.json` with `scripts/new-clinic.ts`; no `staff_whatsapp`, no WhatsApp creds.
+- The desk shows only the visitor's own lead, visits and events; everyone else's visits are anonymous "Booked" blocks (`deskView`). After a handoff the visitor can reply as the front desk and hand back (`POST /api/demo/reply`, demo clinic + own paused chat only).
+- The 15-min cron (`runJobs`) runs `purgeDemo` (visitor rows older than 6 h, cascades) and `topUpDemo` (fake "Sample Patient" desk visits for days that have none, next 5 days).
+- `replyText` (`sara.ts`): newer models put the reply in "commentary" messages and can end with an empty final answer; web and WhatsApp use the last assistant text of the run, so a reply is never lost.
+
 ## Voice call (web, 2026-11-04)
 - "Call Sara" in the web chat header. The browser holds a WebRTC call to OpenAI Realtime (`OPENAI_REALTIME_MODEL`, default `gpt-realtime-2.1-mini`; voice `OPENAI_REALTIME_VOICE`, default `marin`; reasoning `low`, `semantic_vad`). Client: `src/app/chat/[slug]/call.tsx`, raw data-channel events, no SDK.
 - Routes (same trust as `/api/chat`: clinic by slug, patient by `visitorId`; helpers in `src/lib/visitor.ts`):

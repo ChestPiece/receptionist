@@ -1,0 +1,41 @@
+{
+  "slug": "demo",
+  "name": "Demo Dental (sample data)",
+  "utc_offset_minutes": 240,
+  "phone": "+971 4 000 0789",
+  "address": "Shop 4, Al Wasl Road, Jumeirah 1, Dubai (sample address)",
+  "maps_url": "https://maps.google.com/?q=Jumeirah+1+Dubai",
+  "hours": {
+    "sat": [["09:00", "21:00"]], "sun": [["09:00", "21:00"]], "mon": [["09:00", "21:00"]],
+    "tue": [["09:00", "21:00"]], "wed": [["09:00", "21:00"]], "thu": [["09:00", "21:00"]],
+    "fri": [["16:00", "21:00"]]
+  },
+  "insurers": ["Daman", "AXA", "NextCare"],
+  "faq": [
+    { "q": "Is there parking?", "a": "Yes, free parking behind the building." },
+    { "q": "Do you treat children?", "a": "Yes, from age 3." },
+    { "q": "Which languages do you speak?", "a": "English, Arabic, Hindi and Urdu." }
+  ],
+  "persona": { "name": "Sara" },
+  "services": [
+    { "name": "Check-up", "name_ar": "فحص", "minutes": 30, "price_aed": 150 },
+    { "name": "Cleaning", "name_ar": "تنظيف", "minutes": 45, "price_aed": 300 },
+    { "name": "Filling", "name_ar": "حشوة", "minutes": 60, "price_aed": 450 },
+    { "name": "Toothache visit", "name_ar": "زيارة ألم الأسنان", "minutes": 30, "price_aed": 200 },
+    { "name": "Kids check-up", "name_ar": "فحص الأطفال", "minutes": 30, "price_aed": 120 },
+    { "name": "Whitening", "name_ar": "تبييض", "minutes": 60, "price_aed": 900 }
+  ],
+  "dentists": [
+    { "name": "Dr. Amal Haddad", "title": "General dentist", "color": "#4f6f5c",
+      "hours": { "sat": [["09:00", "17:00"]], "sun": [["09:00", "17:00"]], "mon": [["09:00", "17:00"]], "tue": [["09:00", "17:00"]], "wed": [["09:00", "17:00"]] },
+      "services": ["Check-up", "Cleaning", "Filling", "Toothache visit", "Kids check-up"] },
+    { "name": "Dr. Omar Saeed", "title": "Cosmetic dentist", "color": "#33506e",
+      "hours": { "sun": [["13:00", "21:00"]], "mon": [["13:00", "21:00"]], "tue": [["13:00", "21:00"]], "wed": [["13:00", "21:00"]], "thu": [["13:00", "21:00"]], "fri": [["16:00", "21:00"]] },
+      "services": ["Check-up", "Cleaning", "Whitening", "Filling"] },
+    { "name": "Dr. Lina Farouk", "title": "Hygienist", "color": "#8a5a2e",
+      "hours": { "sat": [["12:00", "20:00"]], "mon": [["09:00", "15:00"]], "wed": [["12:00", "20:00"]], "thu": [["09:00", "15:00"]] },
+      "services": ["Cleaning", "Check-up", "Kids check-up"] }
+  ],
+  "owner": "owner@goodshine.test",
+  "staff": []
+}
