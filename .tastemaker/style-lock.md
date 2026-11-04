@@ -78,3 +78,18 @@ Paper/dot textures, torn edges, gradient blobs, glassmorphism beyond the navbar 
 - **Horizon**: a thin dawn line with a soft glow (no planet circle), mirrored on top of the close band.
 - **One pin = the night film** (`NightFilm`): a pinned, scroll-scrubbed frame sequence (about 350vh) with live DOM serif captions driven by `--p`. It replaces the bridge and the How it works pin. How it works, features (bento) and safety (editorial list) are scroll reveals only.
 - **Hero entrance is CSS** (`.rise` line masks, `.fade-up`), visible from first paint, no hydration wait.
+
+## Amendment 2026-11-03 (approved by Anas): the desk log (landing only)
+- **Shape**: cream hero (no night hero) with the live chat replay, then the desk log, setup steps, safety list, tagline word reveal, FAQ, night close band and night footer.
+- **The desk log is the page's one scroll story** (`DeskLog` in `src/components/landing.tsx`): a sticky mono clock (18:00 to 09:00) beside five hour entries, each with one real product piece (Arabic chat, slot picker + booked card + week calendar, the 998 reply, a reminder, the staff inbox). The clock reads an entry's time when that entry is centred and runs to the next time in between; the rail (dawn) fills with it. Sticky CSS, not a GSAP pin.
+- **Sky**: the desk log's background follows the active entry: day, dusk (#ece2cf), night (the `.night` token scope via `.desk[data-sky=night]`), dawn (#f4e6d2). Colours only, 600 ms. Product cards inside stay lit (`.screen`). Night entries carry `data-night`, so the nav turns night over them.
+- **Motion**: Lenis is the one smooth-scroll engine (landing only, driven by the GSAP ticker, off under reduced motion). Entry pieces arrive one at a time, 180 ms `power2.out`, 350 ms apart, no overshoot (measured 165 ms visible). The tagline fills word by word, scrubbed. Reduced motion: native scroll, clock jumps per entry, every piece shown.
+- **CTA**: "Book a 15 min demo call" goes to `NEXT_PUBLIC_DEMO_CALL_URL` (public; a booking page or a business wa.me link, never a private number). Unset: the demo chat. "Try Sara now" is the secondary link.
+- **Retired**: the night film, `FrameSequence`, PatternWaves (WebGL, and `ogl`), `public/frames/film`, `motion/night-film*`. The `.day` scope now uses the cream app tokens.
+
+## Amendment 2026-11-03 v2 (pending Anas review): the clock is the hero
+- **Hero**: the giant Geist Mono `18:00` (`HeroClock`) with the hour rail is the focal object above the H1; it lifts away on scroll (scrubbed fade) as the desk clock takes over. The chat replay stays on the right.
+- **Rail**: one mark per entry hour, the 02:14 mark in alert colour; shared by the hero and the desk clock (`Rail`).
+- **Tally**: under the desk clock, chats answered / visits booked / sent to your team, interpolated with the clock from each entry's `tally` (sample night, labelled).
+- **Entry layouts**: phone (narrow thread right), wide (booking pair + calendar), alarm (centred, no card), flip (art left), inbox (full width with the night summary). No two entries share a shape.
+- **Nav** turns night from the desk sky (not per entry). Setup is one ruled sheet, not three cards. The close label is "18:00 tonight".

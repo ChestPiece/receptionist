@@ -45,3 +45,4 @@ next-env.d.ts
 
 # throwaway design mockups
 design-options/
+.reanimate/
