@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { safeNext } from "@/lib/safety";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,8 +11,7 @@ import { Input } from "@/components/ui/input";
 export function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
-  const asked = params.get("next");
-  const next = asked?.startsWith("/") && !asked.startsWith("//") ? asked : "/dashboard";
+  const next = safeNext(params.get("next"));
   const linkFailed = params.get("error") === "link";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

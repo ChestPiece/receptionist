@@ -66,7 +66,7 @@ export default async function Inbox({ searchParams }: PageProps<"/dashboard/inbo
   return (
     <>
       <PageHeader title="Inbox" />
-      <PageBody className="grid grid-cols-1 grid-rows-[minmax(0,1fr)] lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[300px_minmax(0,1fr)_280px]">
+      <PageBody className="grid grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)] lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[300px_minmax(0,1fr)_280px]">
         {/* List: hidden on phones while a chat is open. */}
         <div className={cn("flex min-h-0 flex-col border-e", p && "max-lg:hidden")}>
           <nav className="flex shrink-0 flex-wrap gap-1 border-b px-2 py-2" aria-label="Filter">
@@ -77,13 +77,13 @@ export default async function Inbox({ searchParams }: PageProps<"/dashboard/inbo
               </Link>
             ))}
           </nav>
-          <ScrollArea className="min-h-0 flex-1">
+          <ScrollArea className="min-h-0 flex-1 [&_[data-slot=scroll-area-viewport]>div]:!block">
             <ul className="divide-y">
               {list.length === 0 && <li className="p-4 text-sm text-muted-foreground">{f === "staff" ? "Nobody is waiting for staff." : f === "test" ? "No test chats. Try Test Sara in the sidebar." : "No chats here."}</li>}
               {list.map((m) => (
                 <li key={m.patient_id}>
                   <Link href={href({ p: m.patient_id })} aria-current={m.patient_id === open ? "true" : undefined}
-                    className={cn("grid gap-0.5 px-3 py-2.5 hover:bg-muted/60", m.patient_id === open && "bg-muted")}>
+                    className={cn("grid min-w-0 gap-0.5 px-3 py-2.5 hover:bg-muted/60", m.patient_id === open && "bg-muted")}>
                     <span className="flex items-center gap-2">
                       {waiting.has(m.patient_id) && <span className="size-2 shrink-0 rounded-full bg-alert" aria-label="Needs staff" />}
                       <span className="truncate text-sm font-medium">{who(m)}</span>
@@ -91,7 +91,7 @@ export default async function Inbox({ searchParams }: PageProps<"/dashboard/inbo
                     </span>
                     <span className="flex items-center gap-2 text-xs text-muted-foreground">
                       <ChannelTag channel={m.channel} />
-                      <span dir="auto" className="truncate">{m.body}</span>
+                      <span dir="auto" className="min-w-0 truncate">{m.body.replace(/\*\*|__/g, "")}</span>
                     </span>
                   </Link>
                 </li>

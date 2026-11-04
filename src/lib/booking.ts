@@ -161,8 +161,9 @@ export async function moveVisit(
   sb: SupabaseClient, c: Clinic,
   v: { id: string; date: string; time: string; dentistId?: string | null; actor: Actor },
 ): Promise<BookResult> {
-  const { data: a, error: e1 } = await sb.from("appointments").select("dentist_id, service_id, service, patient_id, starts_at, ends_at").eq("id", v.id).eq("clinic_id", c.id).single();
+  const { data: a, error: e1 } = await sb.from("appointments").select("dentist_id, service_id, service, patient_id, starts_at, ends_at, status").eq("id", v.id).eq("clinic_id", c.id).single();
   if (e1) throw e1;
+  if (a.status !== "booked") return { ok: false, reason: "unavailable" };
   const minutes = (Date.parse(a.ends_at) - Date.parse(a.starts_at)) / 60_000;
   // A visit whose service was archived has no match in c.services: only a chosen or its current dentist can take it.
   const dentists = a.service_id && c.services.some((s) => s.id === a.service_id)
@@ -176,20 +177,23 @@ export async function moveVisit(
   if (!got.ok) return fail(got);
   const { error } = await sb.from("appointments")
     .update({ dentist_id: got.dentistId, starts_at: got.starts_at, ends_at: got.ends_at, reminded_24h_at: null, reminded_2h_at: null, confirmed_at: null })
-    .eq("id", v.id).eq("clinic_id", c.id);
+    .eq("id", v.id).eq("clinic_id", c.id).eq("status", "booked");
   if (error?.code === "23P01") return fail({ ok: false, reason: "taken" });
   if (error) throw error;
   await record(sb, c, { actor: v.actor, kind: "moved", verb: "Moved", patientId: a.patient_id, appointmentId: v.id, service: a.service, date: v.date, time: v.time, dentistId: got.dentistId });
   return { ok: true, id: v.id, dentistId: got.dentistId, date: v.date, time: v.time };
 }
 
-export async function cancelVisit(sb: SupabaseClient, c: Clinic, id: string, actor: Actor): Promise<void> {
+// True when a booked visit was cancelled; false when it was not booked (already cancelled, done, or no-show).
+export async function cancelVisit(sb: SupabaseClient, c: Clinic, id: string, actor: Actor): Promise<boolean> {
   const { data: a } = await sb.from("appointments").select("patient_id, service, dentist_id, starts_at").eq("id", id).eq("clinic_id", c.id).maybeSingle();
-  const { error } = await sb.from("appointments").update({ status: "cancelled" }).eq("id", id).eq("clinic_id", c.id);
+  // Only a booked visit: a completed or no-show visit stays on the record.
+  const { data: done, error } = await sb.from("appointments").update({ status: "cancelled" }).eq("id", id).eq("clinic_id", c.id).eq("status", "booked").select("id");
   if (error) throw error;
-  if (!a) return;
+  if (!a || !done.length) return false;
   const s = new Date(a.starts_at);
   await record(sb, c, { actor, kind: "cancelled", verb: "Cancelled", patientId: a.patient_id, appointmentId: id, service: a.service, date: localDate(s, c.utc_offset_minutes), time: localTime(s, c.utc_offset_minutes), dentistId: a.dentist_id });
+  return true;
 }
 
 // Future booked visits that no longer fit this dentist: outside their hours, inside time off, or any if inactive.

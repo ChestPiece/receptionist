@@ -43,6 +43,7 @@ export default async function Calendar({ searchParams }: PageProps<"/dashboard/c
           key={v.id}
           closeHref={`?${base}`}
           setup={setup}
+          owner={picked.role === "owner"}
           visit={{
             id: v.id, patient: who(v.patients), patientId: v.patient_id, service: v.service, serviceId: v.service_id,
             dentist: setup.dentists.length > 1 ? clinic.dentists.find((d) => d.id === v.dentist_id)?.name ?? null : null,

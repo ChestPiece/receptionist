@@ -68,7 +68,10 @@ export function ClinicSwitcher({ clinics, current }: { clinics: { id: string; na
   const label = (
     <>
       <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-sm font-semibold text-primary-foreground">{current.name.charAt(0)}</span>
-      <span className="min-w-0 flex-1 truncate text-start text-sm font-medium">{current.name}</span>
+      <span className="grid min-w-0 flex-1 text-start leading-tight">
+        <span className="truncate text-sm font-medium" title={current.name}>{current.name.replace(/\s*\(sample data\)/i, "")}</span>
+        {/\(sample data\)/i.test(current.name) && <span className="truncate text-xs text-muted-foreground">Sample data</span>}
+      </span>
     </>
   );
   if (clinics.length < 2) return <SidebarMenuButton size="lg" className="pointer-events-none">{label}</SidebarMenuButton>;

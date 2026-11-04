@@ -2,6 +2,7 @@
 // patient row, and the tool only ever touches that patient (clinic and patient never come from the model's arguments).
 import { z } from "zod";
 import { clinicBySlug } from "@/lib/clinics";
+import { allow } from "@/lib/db";
 import { runTool } from "@/lib/sara";
 import { findVisitor, inCall, sameOrigin } from "@/lib/visitor";
 
@@ -18,6 +19,7 @@ export async function POST(req: Request) {
   if (!clinic?.active) return new Response("not found", { status: 404 });
   const patient = await findVisitor(clinic, visitorId);
   if (!patient || !(await inCall(patient.id))) return new Response("no call", { status: 404 });
+  if (!(await allow(`voice:${patient.id}`, 150, 600))) return new Response("busy", { status: 429 }); // one call is about 60 posts
   try {
     return Response.json({ output: await runTool(clinic, patient, name, args) });
   } catch (e) {

@@ -7,8 +7,16 @@ import { supabaseServer } from "./supabase/server";
 // ponytail: same-origin only while the chat page is ours; the embeddable widget (P1) checks clinic.allowed_origins.
 export const sameOrigin = (req: Request) => {
   const origin = req.headers.get("origin");
-  return !origin || new URL(origin).host === req.headers.get("host");
+  if (!origin) return true;
+  try {
+    return new URL(origin).host === req.headers.get("host");
+  } catch {
+    return false; // "null" (sandboxed frame) or junk
+  }
 };
+
+// Vercel sets x-forwarded-for itself (the client's value is not passed through), so the first entry is the caller.
+export const ipOf = (req: Request) => req.headers.get("x-forwarded-for")?.split(",")[0].trim() || "unknown";
 
 // ?test=1 counts only for a signed-in member of this clinic or a platform admin (RLS lets them read the clinic row); anyone else is a normal visitor.
 export async function isStaffOf(clinicId: string) {
@@ -35,7 +43,7 @@ export async function findVisitor(clinic: Clinic, visitorId: string) {
   return data as { id: string; name: string | null; phone: string | null } | null;
 }
 
-// ponytail: per visitor id only; a script rotating ids gets past it. Add a per-IP limit before the widget goes on real sites.
+// Per visitor id; the routes add a per-IP limit (allow) on top, since a script can rotate ids.
 export async function overRateLimit(patientId: string) {
   const { count } = await db()
     .from("messages")

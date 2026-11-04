@@ -18,7 +18,9 @@ export async function POST(request: Request) {
 
   // One line per webhook, no message text (no PHI in logs).
   const outcome = !msg ? "ignored" : allowed.length && !allowed.includes(msg.from) ? "not allowlisted" : "reply";
-  console.log(`[webhook] ${clinic?.slug ?? "-"} ${payload?.event_type ?? "?"} fromMe=${payload?.data?.fromMe ?? "?"} -> ${outcome}`);
+  // event_type comes before any auth: log it only when it is a plain word, so a crafted payload can't forge log lines.
+  const event = /^[a-z_]{1,40}$/.test(String(payload?.event_type)) ? payload.event_type : "?";
+  console.log(`[webhook] ${clinic?.slug ?? "-"} ${event} fromMe=${payload?.data?.fromMe === true} -> ${outcome}`);
 
   // Ack now, answer after the response (dedupe happens in the DB inside handleMessage).
   if (msg && clinic && outcome === "reply") after(() => handleMessage(clinic, msg).catch((e) => console.error("[handle]", e.message)));

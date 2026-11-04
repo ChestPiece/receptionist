@@ -16,7 +16,8 @@ WhatsApp AI receptionist for UAE dental clinics (Dubai first), English + Arabic.
 
 ## Rules
 - The owner's phone number and all keys stay in `.env.local` only, never in tracked files.
-- Commit only when asked. GitHub: `ChestPiece/clinic-whatsapp-bot` (private), branch `master`.
+- Commit only when asked. GitHub: `ChestPiece/receptionist` (private).
+- Branches (2026-11-04): only two. `dev` is the working branch: all work and pushes go there. `master` is production: touch it only when the owner asks to release (merge `dev` into `master`). No other branches.
 - Vercel deploys every push to `master` to production. Paste a new migration before pushing code that needs it.
 - Ask before any Supabase write; the owner runs SQL in the SQL editor.
 
@@ -67,6 +68,12 @@ Package manager is **bun** (`bun.lock` only, no `package-lock.json`). Use `bun i
 - Caps: 8 min per call, hang up after 45 s without caller speech, hang up on page hide.
 - Needs `0010_voice.sql` (allows `'voice'` in the `messages` and `usage_events` channel checks). Without it, voice transcripts fail to log; the call still works.
 - `spikes/voice/` (untracked) is the A/B test bench on 127.0.0.1:8787.
+
+## Review hardening (2026-11-04, `0011_review.sql`)
+- Rate limits use the `hit(key, max, window_s)` RPC (`allow()` in `src/lib/db.ts`, atomic via advisory lock, table `rate_hits`). Keys: `chat-ip` 60/10 min, `chat-v` per visitor `RATE_MAX`/10 min, `call-ip` 6/h, `call-clinic` 60/h, `voice:<patient>` 150 tool+turn posts/10 min, `handoff:<clinic>` 20 staff alerts/h, `emerg:<clinic>:<from>` 3 emergency replies/10 min while flood-limited. `allow()` fails open (logs `[rate]`) until 0011 is pasted.
+- `unforge()` (`safety.ts`) strips a leading `[Front desk]` / `[voice note]` from patient text on every channel; only assistant-role `[Front desk]` turns are staff.
+- `safeNext()` guards the login and magic-link redirects. 0011 also ties staff message/event inserts to a patient of the same clinic and revokes default grants on the early tables.
+- Skipped on purpose: webhook/cron secrets stay in the query string (UltraMsg has no header option), RLS policy perf rewrites (no scale yet).
 
 ## Design (clean SaaS, 2026-10-25, replaces "The Ledger")
 - **Brand guidelines are locked in `.tastemaker/style-lock.md`. Read it before any UI work and follow it; change it only when Anas asks.**

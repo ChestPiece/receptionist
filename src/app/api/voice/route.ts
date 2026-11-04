@@ -4,10 +4,10 @@ import type { AgentInputItem } from "@openai/agents";
 import { z } from "zod";
 import { spokenHistory, stillPaused, trimHistory } from "@/lib/agent";
 import { clinicBySlug } from "@/lib/clinics";
-import { db } from "@/lib/db";
+import { allow, db } from "@/lib/db";
 import { logEvent } from "@/lib/events";
 import { buildInstructions, toolSchemas } from "@/lib/sara";
-import { overRateLimit, sameOrigin, upsertVisitor } from "@/lib/visitor";
+import { ipOf, overRateLimit, sameOrigin, upsertVisitor } from "@/lib/visitor";
 
 const MODEL = process.env.OPENAI_REALTIME_MODEL ?? "gpt-realtime-2.1-mini";
 const CALLS_PER_HOUR = 3;
@@ -22,6 +22,9 @@ export async function POST(req: Request) {
   const clinic = await clinicBySlug(slug);
   if (!clinic?.active) return new Response("not found", { status: 404 });
 
+  // Realtime minutes are the costliest thing here: cap per IP and per clinic too, not only per visitor id.
+  const [ipOk, clinicOk] = await Promise.all([allow(`call-ip:${ipOf(req)}`, 6, 3600), allow(`call-clinic:${clinic.id}`, 60, 3600)]);
+  if (!ipOk || !clinicOk) return Response.json({ error: "busy" }, { status: 429 });
   const sb = db();
   const patient = await upsertVisitor(clinic, visitorId, test);
   const hourAgo = new Date(Date.now() - 60 * 60_000).toISOString();

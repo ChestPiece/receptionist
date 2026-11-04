@@ -4,14 +4,14 @@ import { createAiSdkUiMessageStreamResponse } from "@openai/agents-extensions/ai
 import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 import { after } from "next/server";
 import { z } from "zod";
-import { appendHistory, capText, lapseMarker, slowDown, sorry, stillPaused, trimHistory } from "@/lib/agent";
+import { appendHistory, capText, lapseMarker, RATE_MAX, RATE_WINDOW_MS, slowDown, sorry, stillPaused, trimHistory } from "@/lib/agent";
 import { markerOf, splitChips } from "@/lib/chips";
 import { clinicBySlug } from "@/lib/clinics";
-import { db, logMessages, logUsage } from "@/lib/db";
+import { allow, db, logMessages, logUsage } from "@/lib/db";
 import { reviewAndLog } from "@/lib/reviewer";
-import { emergencyReply, isEmergency } from "@/lib/safety";
+import { emergencyReply, isEmergency, unforge } from "@/lib/safety";
 import { streamSara } from "@/lib/sara";
-import { overRateLimit, sameOrigin, upsertVisitor } from "@/lib/visitor";
+import { ipOf, overRateLimit, sameOrigin, upsertVisitor } from "@/lib/visitor";
 
 export const maxDuration = 60;
 
@@ -46,15 +46,20 @@ export async function POST(req: Request) {
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return new Response("bad request", { status: 400 });
   const { slug, visitorId, message, test } = parsed.data;
-  const text = capText(message.parts.map((p) => (p.type === "text" ? (p.text ?? "") : "")).join("\n").trim());
+  const text = capText(unforge(message.parts.map((p) => (p.type === "text" ? (p.text ?? "") : "")).join("\n").trim()));
   if (!text) return new Response("empty message", { status: 400 });
 
   const clinic = await clinicBySlug(slug);
   if (!clinic?.active) return new Response("not found", { status: 404 });
 
+  // An emergency always gets the 998 reply, even past the limits below (a few per visitor, so it can't be used to dodge them).
+  const urgent = isEmergency(text) && (await allow(`emerg:${clinic.id}:${visitorId}`, 3, 600));
+  // Per IP (rotating visitor ids gets past the per-visitor count), then per visitor, counted atomically before the model runs.
+  if (!urgent && !(await allow(`chat-ip:${ipOf(req)}`, 60, 600))) return fixed(slowDown(clinic.phone));
   const sb = db();
   const patient = await upsertVisitor(clinic, visitorId, test);
-  if (await overRateLimit(patient.id)) return fixed(slowDown(clinic.phone));
+  const [overCount, underHits] = urgent ? [false, true] : await Promise.all([overRateLimit(patient.id), allow(`chat-v:${patient.id}`, RATE_MAX, RATE_WINDOW_MS / 1000)]);
+  if (overCount || !underHits) return fixed(slowDown(clinic.phone));
 
   const { data: convo } = await sb.from("conversations").select("history, bot_paused, updated_at").eq("patient_id", patient.id).maybeSingle();
   const saved = trimHistory((convo?.history ?? []) as AgentInputItem[]);

@@ -85,7 +85,7 @@ export default async function Today() {
                     <li key={r.id} className={cn("flex items-center gap-3 px-4 py-2", r.status === "no_show" && "opacity-60")}>
                       <span className="w-11 shrink-0 font-mono text-xs tabular-nums">{localTime(new Date(r.starts_at), off)}</span>
                       <Link href={`/dashboard/patients/${r.patient_id}`} className="min-w-0 flex-1 truncate text-sm hover:underline">
-                        <span className="font-medium">{who(r.patients)}</span> <span className="text-muted-foreground">· {r.service}</span>
+                        <span className="font-medium max-sm:block max-sm:truncate">{who(r.patients)}</span> <span className="text-muted-foreground max-sm:block max-sm:truncate max-sm:text-xs"><span className="max-sm:hidden">· </span>{r.service}</span>
                       </Link>
                       {r.status === "booked" ? (
                         <span className="flex shrink-0 gap-1">
@@ -110,7 +110,7 @@ export default async function Today() {
 function Stat({ label, value, alert, href }: { label: string; value: number; alert?: boolean; href?: string }) {
   const body = (
     <>
-      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="block text-xs leading-snug text-muted-foreground">{label}</span>
       <strong className={cn("block text-2xl font-semibold tracking-tight tabular-nums", alert && "text-alert")}>{value}</strong>
     </>
   );

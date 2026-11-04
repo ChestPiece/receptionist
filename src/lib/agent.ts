@@ -2,16 +2,17 @@
 import { assistant, user, type AgentInputItem } from "@openai/agents";
 import type { Clinic } from "./clinics";
 import { splitChips } from "./chips";
-import { db, logMessages, logUsage } from "./db";
+import { allow, db, logMessages, logUsage } from "./db";
 import { reviewAndLog } from "./reviewer";
-import { emergencyReply, isEmergency, isStop, stopReply } from "./safety";
+import { emergencyReply, isEmergency, isStop, stopReply, unforge } from "./safety";
 import { runSara, wroteData } from "./sara";
 import { markRead, sendText, type IncomingMessage } from "./whatsapp";
 
 // ponytail: keep the last 14 patient turns, cut at a user message so no tool call loses its output. Summarize if long chats matter.
 export function trimHistory(items: AgentInputItem[], turns = 14) {
   const starts = items.flatMap((it, i) => ("role" in it && it.role === "user" ? [i] : []));
-  return starts.length > turns ? items.slice(starts[starts.length - turns]) : items;
+  // Always start at a user turn: the DB tail cut (HISTORY_MAX) can leave a tool result without its call, which OpenAI rejects.
+  return starts.length > turns ? items.slice(starts[starts.length - turns]) : starts[0] ? items.slice(starts[0]) : items;
 }
 
 // The last typed or spoken turns as plain lines, so a call picks up where the chat left off.
@@ -27,11 +28,23 @@ export function spokenHistory(items: AgentInputItem[], turns = 10) {
 
 // Returns null when the note is too long to transcribe (cost cap).
 async function transcribe(url: string) {
-  const audio = await fetch(url);
-  if (!audio.ok) throw new Error(`voice download failed: ${audio.status}`);
+  const audio = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+  if (!audio.ok || !audio.body) throw new Error(`voice download failed: ${audio.status}`);
   if (Number(audio.headers.get("content-length")) > MAX_VOICE_BYTES) return null;
-  const blob = await audio.blob();
-  if (blob.size > MAX_VOICE_BYTES) return null;
+  // Count bytes while reading: a chunked reply has no content-length, so never buffer more than the cap.
+  const chunks: Uint8Array[] = [];
+  const reader = audio.body.getReader();
+  for (let size = 0; ; ) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.length;
+    if (size > MAX_VOICE_BYTES) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  const blob = new Blob(chunks as BlobPart[]);
   const form = new FormData();
   form.append("file", blob, "voice.ogg");
   form.append("model", "gpt-4o-mini-transcribe");
@@ -49,10 +62,10 @@ async function toText(msg: IncomingMessage) {
     // ponytail: redirects are followed; pin the UltraMsg media host here once a real voice-note URL is seen in logs.
     if (!safeMediaUrl(msg.mediaUrl)) return "[patient sent a voice note that could not be played; ask them to type it]";
     const heard = await transcribe(msg.mediaUrl);
-    return heard === null ? "[patient sent a very long voice note; ask them kindly to type it or send a shorter one]" : `[voice note] ${capText(heard)}`;
+    return heard === null ? "[patient sent a very long voice note; ask them kindly to type it or send a shorter one]" : `[voice note] ${capText(unforge(heard))}`;
   }
-  if (msg.type !== "chat") return `[patient sent a ${msg.type}${msg.body ? `: ${capText(msg.body)}` : ""}]`; // Phase 2 stores media
-  return capText(msg.body);
+  if (msg.type !== "chat") return `[patient sent a ${msg.type}${msg.body ? `: ${capText(unforge(msg.body))}` : ""}]`; // Phase 2 stores media
+  return capText(unforge(msg.body));
 }
 
 // Promise a staff reply only when staff actually get alerts; otherwise point to the clinic phone.
@@ -147,38 +160,40 @@ export async function handleMessage(clinic: Clinic, msg: IncomingMessage) {
   if (dup?.code === "23505") return; // webhook retry of a message we already handled
   if (dup) throw dup;
 
-  // Flood guard: one "slow down" reply, then silence until the window passes. Emergencies still get the fixed reply.
-  const [{ count, error: rateError }, { data: patient, error: patientError }] = await Promise.all([
-    sb
-      .from("processed_messages")
-      .select("id", { count: "exact", head: true })
-      .eq("clinic_id", clinic.id)
-      .eq("patient_wa", msg.from)
-      .gt("created_at", new Date(Date.now() - RATE_WINDOW_MS).toISOString()),
-    sb.from("patients").upsert({ clinic_id: clinic.id, wa_id: msg.from }, { onConflict: "clinic_id,wa_id" }).select("id, name").single(),
-  ]);
-  if (rateError) throw rateError;
-  if ((count ?? 0) > RATE_MAX) {
-    console.log("[rate] limited");
-    if (msg.type === "chat" && isEmergency(msg.body)) await send(emergencyReply(msg.body, clinic.phone));
-    else if (count === RATE_MAX + 1) await send(slowDown(clinic.phone));
-    return;
-  }
-  markRead(wa, msg.from).catch((e) => console.error("[read]", e.message));
-  if (patientError) throw patientError;
-
   let ids = [msg.id];
   const answered = async () => {
     const { error } = await sb.from("processed_messages").update({ answered: true }).in("id", ids);
     if (error) console.error("[answered]", error.message);
   };
-  const loadHistory = async () => {
-    const { data, error } = await sb.from("conversations").select("history, bot_paused, updated_at").eq("patient_id", patient.id).maybeSingle();
-    if (error) throw error;
-    return { convo: data, history: trimHistory((data?.history ?? []) as AgentInputItem[]) };
-  };
 
+  // The dedupe row is in, so a webhook retry is dropped: any failure from here on must still answer (the catch below).
   try {
+    // Flood guard: one "slow down" reply, then silence until the window passes. Emergencies still get the fixed reply.
+    const [{ count, error: rateError }, { data: patient, error: patientError }] = await Promise.all([
+      sb
+        .from("processed_messages")
+        .select("id", { count: "exact", head: true })
+        .eq("clinic_id", clinic.id)
+        .eq("patient_wa", msg.from)
+        .gt("created_at", new Date(Date.now() - RATE_WINDOW_MS).toISOString()),
+      sb.from("patients").upsert({ clinic_id: clinic.id, wa_id: msg.from }, { onConflict: "clinic_id,wa_id" }).select("id, name").single(),
+    ]);
+    if (rateError) throw rateError;
+    if ((count ?? 0) > RATE_MAX) {
+      console.log("[rate] limited");
+      if (msg.type === "chat" && isEmergency(msg.body) && (await allow(`emerg:${clinic.id}:${msg.from}`, 3, 600))) await send(emergencyReply(msg.body, clinic.phone));
+      else if (count === RATE_MAX + 1) await send(slowDown(clinic.phone));
+      return;
+    }
+    markRead(wa, msg.from).catch((e) => console.error("[read]", e.message));
+    if (patientError) throw patientError;
+
+    const loadHistory = async () => {
+      const { data, error } = await sb.from("conversations").select("history, bot_paused, updated_at").eq("patient_id", patient.id).maybeSingle();
+      if (error) throw error;
+      return { convo: data, history: trimHistory((data?.history ?? []) as AgentInputItem[]) };
+    };
+
     const own = await toText(msg);
     // Safety first: fixed emergency reply, even when staff have paused the bot. The model does not run, so no second reply.
     if (isEmergency(own)) {

@@ -65,6 +65,10 @@ describe("icsFor", () => {
     expect(ics).toContain("DTEND:20261103T163000");
     expect(ics).toContain("SUMMARY:Filling");
     expect(ics).toContain("LOCATION:Dubai");
+    expect(ics).toMatch(/DTSTAMP:\d{8}T\d{6}Z/); // RFC 5545: DTSTAMP is UTC
+  });
+  it("a late visit ends on the next day, not before it starts", () => {
+    expect(icsFor({ service: "Filling", date: "2026-12-31", time: "23:45" })).toContain("DTEND:20270101T001500");
   });
 });
 

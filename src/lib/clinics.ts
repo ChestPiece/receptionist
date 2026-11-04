@@ -4,7 +4,7 @@ import { db } from "./db";
 import type { Hours } from "./slots";
 import { normInstance, type WaCreds } from "./whatsapp";
 
-export type Service = { id: string; name: string; name_ar: string; minutes: number; price_aed: number; active: boolean; sort: number };
+export type Service = { id: string; name: string; name_ar: string; minutes: number; price_aed: number | null; active: boolean; sort: number };
 export type Dentist = {
   id: string; name: string; name_ar: string | null; title: string | null; color: string | null;
   hours: Hours; active: boolean; sort: number; service_ids: string[];

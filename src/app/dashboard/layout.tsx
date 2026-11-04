@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/ledger";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -93,9 +94,14 @@ async function User() {
       </Avatar>
       <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
         <p className="truncate text-xs font-medium" title={email}>{email}</p>
-        <form action={signOut}>
-          <button className="text-xs text-muted-foreground hover:text-foreground">Sign out{clinic?.role === "owner" ? " · owner" : ""}</button>
-        </form>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Link href="/dashboard/account" className="hover:text-foreground">Account</Link>
+          <span aria-hidden>·</span>
+          <form action={signOut}>
+            <button className="hover:text-foreground">Sign out</button>
+          </form>
+          {clinic?.role === "owner" && <span className="ms-auto">Owner</span>}
+        </div>
       </div>
       <ThemeToggle />
     </div>

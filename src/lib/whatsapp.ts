@@ -27,6 +27,7 @@ export function parseWebhook(payload: unknown): (IncomingMessage & { instanceId:
   if (d.fromMe === true || d.self === true) return null;
   const from = String(d.from ?? "");
   if (!from.endsWith("@c.us")) return null; // ignore groups (@g.us), status, broadcasts
+  if (!d.id) return null; // the id is the dedupe key: an empty one would collapse every such message into one
   return {
     instanceId,
     id: String(d.id ?? ""),

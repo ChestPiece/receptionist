@@ -12,6 +12,8 @@ import { PageBody, PageHeader } from "../../page-frame";
 import { BookFor } from "../../schedule";
 import { Thread, type ThreadMsg } from "../../thread";
 import { savePatient } from "../../actions";
+import { BulkDelete, ConfirmDelete } from "../../confirm-delete";
+import { deletePatients, deleteVisits } from "../../settings/actions";
 
 export const metadata = { title: "Patient" };
 
@@ -34,6 +36,7 @@ export default async function Patient({ params }: PageProps<"/dashboard/patients
   const multi = clinic.dentists.filter((d) => d.active).length > 1;
   const lines = (msgs ?? []).reverse().map((m) => ({ ...m, time: localTime(new Date(m.created_at), off) })) as ThreadMsg[];
   const now = new Date().toISOString();
+  const owner = picked.role === "owner";
 
   return (
     <>
@@ -58,7 +61,10 @@ export default async function Patient({ params }: PageProps<"/dashboard/patients
           </form>
 
           <section>
-            <h2 className="text-sm font-semibold">Visits</h2>
+            <div className="flex min-h-8 items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold">Visits</h2>
+              {owner && <BulkDelete group="visits" noun="visit" run={deleteVisits} body="The visits leave the calendar and get no reminders." />}
+            </div>
             <ul className="mt-2 divide-y rounded-xl border text-sm">
               {(visits ?? []).length === 0 && <li className="px-3 py-2 text-muted-foreground">No visits yet.</li>}
               {(visits ?? []).map((v) => {
@@ -66,8 +72,9 @@ export default async function Patient({ params }: PageProps<"/dashboard/patients
                 const date = localDate(s, off);
                 const live = v.status === "booked" && v.starts_at > now;
                 return (
-                  <li key={v.id}>
-                    <Link href={`/dashboard/calendar?d=${date}&a=${v.id}`} className={cn("flex items-baseline justify-between gap-3 px-3 py-2 hover:bg-muted", !live && "text-muted-foreground")}>
+                  <li key={v.id} className="flex items-center">
+                    {owner && <input type="checkbox" data-pick="visits" value={v.id} aria-label={`Select ${v.service} visit`} className="ms-3 size-4 shrink-0 accent-primary" />}
+                    <Link href={`/dashboard/calendar?d=${date}&a=${v.id}`} className={cn("flex min-w-0 flex-1 items-baseline justify-between gap-3 px-3 py-2 hover:bg-muted", !live && "text-muted-foreground")}>
                       <span className="min-w-0">
                         <span className={cn("block truncate", live && "font-medium text-foreground")}>{v.service}</span>
                         <span className="block font-mono text-xs">{DAY.format(new Date(`${date}T00:00:00Z`))} · {localTime(s, off)}{multi && ` · ${clinic.dentists.find((d) => d.id === v.dentist_id)?.name ?? ""}`}</span>
@@ -94,6 +101,14 @@ export default async function Patient({ params }: PageProps<"/dashboard/patients
                   );
                 })}
               </ul>
+            </section>
+          )}
+
+          {owner && (
+            <section className="grid gap-2 rounded-xl border border-alert/30 p-3">
+              <h2 className="text-sm font-semibold">Delete patient</h2>
+              <p className="text-xs text-muted-foreground">Removes {who(p)} with every visit, message and the chat history. If they write again on WhatsApp, Sara starts fresh.</p>
+              <div><ConfirmDelete label="Delete patient" title={`Delete ${who(p)}?`} body="Every visit, message and the chat history go too." run={deletePatients.bind(null, [p.id])} redirectTo="/dashboard/patients" /></div>
             </section>
           )}
         </div>
