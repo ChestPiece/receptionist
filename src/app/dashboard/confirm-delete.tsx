@@ -5,27 +5,30 @@ import { useEffect, useState, useTransition, type ReactNode } from "react";
 import { Trash2Icon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 type Props = {
   title: string;
   body: ReactNode;
-  run: () => Promise<{ error?: string }>;
+  run: (typed: string) => Promise<{ error?: string }>; // typed = the confirmText the owner entered
   after?: () => void;
   redirectTo?: string; // for server pages, which cannot pass `after`
   label?: string;
   disabled?: boolean;
   icon?: boolean;
+  confirmText?: string; // the owner must type this (e.g. the clinic name) before Delete unlocks
 };
 
-export function ConfirmDelete({ title, body, run, after, redirectTo, label = "Delete", disabled, icon }: Props) {
+export function ConfirmDelete({ title, body, run, after, redirectTo, label = "Delete", disabled, icon, confirmText }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [typed, setTyped] = useState("");
   const [pending, start] = useTransition();
   const go = () =>
     start(async () => {
-      const r = await run();
+      const r = await run(typed);
       if (r.error) return setError(r.error);
       setOpen(false);
       after?.();
@@ -38,7 +41,7 @@ export function ConfirmDelete({ title, body, run, after, redirectTo, label = "De
           <Trash2Icon />
         </Button>
       ) : (
-        <Button type="button" size="sm" variant="outline" className="text-alert hover:text-alert" disabled={disabled} onClick={() => { setError(null); setOpen(true); }}>
+        <Button type="button" size="sm" variant="outline" className="text-alert hover:text-alert" disabled={disabled} onClick={() => { setError(null); setTyped(""); setOpen(true); }}>
           <Trash2Icon />{label}
         </Button>
       )}
@@ -48,10 +51,16 @@ export function ConfirmDelete({ title, body, run, after, redirectTo, label = "De
             <DialogTitle>{title}</DialogTitle>
             <DialogDescription>{body} This cannot be undone.</DialogDescription>
           </DialogHeader>
+          {confirmText && (
+            <label className="grid gap-1.5 text-sm">
+              <span>Type <strong className="font-semibold">{confirmText}</strong> to confirm</span>
+              <Input value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" spellCheck={false} />
+            </label>
+          )}
           {error && <p role="alert" className="text-sm text-alert">{error}</p>}
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => setOpen(false)} disabled={pending}>Keep</Button>
-            <Button type="button" variant="destructive" onClick={go} disabled={pending}>{pending ? "Deleting…" : label}</Button>
+            <Button type="button" variant="destructive" onClick={go} disabled={pending || (!!confirmText && typed.trim() !== confirmText.trim())}>{pending ? "Deleting…" : label}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

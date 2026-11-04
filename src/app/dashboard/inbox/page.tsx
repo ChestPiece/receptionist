@@ -1,3 +1,4 @@
+import { ContactButtons } from "../contact";
 import Link from "next/link";
 import { ArrowLeftIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -109,6 +110,7 @@ export default async function Inbox({ searchParams }: PageProps<"/dashboard/inbo
                   <Link href={`/dashboard/patients/${current.patient_id}`} className="block truncate text-sm font-semibold hover:underline">{who(current)}</Link>
                   <span className="block truncate text-xs text-muted-foreground">{current.wa_id ? `WhatsApp · +${current.wa_id.replace(/@.*/, "")}` : `Website${current.phone ? ` · ${current.phone}` : ""}`}{isPaused ? " · staff have this chat" : " · Sara is answering"}</span>
                 </div>
+                <ContactButtons phone={current.phone} waId={current.wa_id} name={who(current)} compact />
               </header>
               <div aria-live="polite" className="flex min-h-0 flex-1 flex-col-reverse overflow-y-auto">
                 <Thread lines={lines} />

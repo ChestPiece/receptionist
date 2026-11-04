@@ -14,3 +14,15 @@ drop policy if exists "owners delete services" on services;
 create policy "owners delete services" on services for delete to authenticated using (is_owner(clinic_id));
 drop policy if exists "owners delete dentists" on dentists;
 create policy "owners delete dentists" on dentists for delete to authenticated using (is_owner(clinic_id));
+
+-- Settings > Data: the owner can also clear chats (messages + Sara's conversation memory) and the activity log
+-- without deleting patients. A conversation row is recreated by append_history on the next message.
+grant delete on messages, conversations, agent_events to authenticated;
+
+drop policy if exists "owners delete messages" on messages;
+create policy "owners delete messages" on messages for delete to authenticated using (is_owner(clinic_id));
+drop policy if exists "owners delete conversations" on conversations;
+create policy "owners delete conversations" on conversations for delete to authenticated
+  using (is_owner((select clinic_id from patients where id = patient_id)));
+drop policy if exists "owners delete agent events" on agent_events;
+create policy "owners delete agent events" on agent_events for delete to authenticated using (is_owner(clinic_id));

@@ -49,6 +49,13 @@ Package manager is **bun** (`bun.lock` only, no `package-lock.json`). Use `bun i
 - Sara's context carries an explicit `channel` (`"whatsapp" | "web"`); prompt rules and tools branch on it, never on `waId` being null. The voice phase adds `"voice"` (a caller has a number but no WhatsApp id).
 - Reviewer (`src/lib/reviewer.ts`, gpt-5-mini, reasoning effort `low`, 15 s timeout) runs after the reply on risky turns. It gets the last 12 history items (`earlierTurns`), so a time backed by an earlier `find_slots` is not flagged. `ok: true` logs nothing; a timeout or error logs a `review_skipped` warn event on Activity.
 
+## Official WhatsApp (Meta Cloud API, 2026-11-04, `0013_meta_whatsapp.sql`)
+- Per clinic `clinics.wa_provider` = `ultramsg` (default, demos/testing) or `meta` (paying clinics). `toClinic` builds `clinic.wa` as a tagged `WaCreds`; the Meta token is `clinic_secrets.meta_token`, the number is `clinics.meta_phone_number_id`.
+- `src/lib/whatsapp.ts` keeps chat ids as `9715…@c.us` app-wide; the Meta adapter strips/adds `@c.us`. `markRead` takes the message id (Meta marks by id). Voice notes: Meta gives a media id, `fetchMedia` downloads it with the token, only from Meta hosts (`metaMediaHost`).
+- Webhook `/api/whatsapp/meta`: GET verify (`META_VERIFY_TOKEN`), POST checks `X-Hub-Signature-256` with `META_APP_SECRET` (one Meta app for all clinics), payload `phone_number_id` picks the clinic, always 200 once signed.
+- Meta only delivers templates outside its 24 h window: reminders and follow-ups use `clinics.meta_templates` (`reminder`: params name, service, clinic, time; `followup`: name, clinic) when set, else free text (fails outside the window). Staff handoff alerts are still free text.
+- Not yet: coexistence (Embedded Signup on the clinic's existing number) and staff echo webhooks pausing Sara.
+
 ## Web chat (P1, first cut)
 - `/chat/[slug]` (shadcn + AI Elements, `useChat`) talks to `POST /api/chat`, which streams the same Sara agent (`streamSara`) through `createAiSdkUiMessageStreamResponse`. History lives server side in `conversations`, like WhatsApp; the client sends only its newest message.
 - Visitor = anonymous id in localStorage, stored as `patients.web_visitor_id` (`wa_id` is null). Sara asks for a mobile number before a web booking or handoff; web handoff pauses the chat and alerts staff on WhatsApp (when `staff_whatsapp` is set) with a callback number. While paused, the visitor polls `GET /api/chat` every 4 s and sees staff replies.

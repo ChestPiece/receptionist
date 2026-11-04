@@ -12,6 +12,7 @@ import { PageBody, PageHeader } from "../../page-frame";
 import { BookFor } from "../../schedule";
 import { Thread, type ThreadMsg } from "../../thread";
 import { savePatient } from "../../actions";
+import { ContactButtons } from "../../contact";
 import { BulkDelete, ConfirmDelete } from "../../confirm-delete";
 import { deletePatients, deleteVisits } from "../../settings/actions";
 
@@ -50,6 +51,7 @@ export default async function Patient({ params }: PageProps<"/dashboard/patients
             <p className="text-xs text-muted-foreground">
               {p.wa_id ? `WhatsApp +${p.wa_id.replace(/@.*/, "")}` : "Website chat"}{p.opted_out && " · opted out of follow-ups (sent STOP)"}
             </p>
+            <ContactButtons phone={p.phone} waId={p.wa_id} name={who(p)} />
             <div className="grid gap-1.5"><Label htmlFor="pf-name">Name</Label><Input id="pf-name" name="name" defaultValue={p.name ?? ""} /></div>
             <div className="grid grid-cols-2 gap-2">
               <div className="grid gap-1.5"><Label htmlFor="pf-phone">Phone</Label><Input id="pf-phone" name="phone" type="tel" defaultValue={p.phone ?? ""} className="font-mono" /></div>

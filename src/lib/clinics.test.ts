@@ -24,3 +24,12 @@ test("toClinic maps services and dentists from their tables, not the legacy json
   expect(c.dentists[1].service_ids).toEqual(["s1", "s2"]);
   expect("dentist_services" in c.dentists[1]).toBe(false);
 });
+
+test("toClinic picks the clinic's WhatsApp provider, and only with its credentials", () => {
+  const row = (r: Record<string, unknown>) => toClinic({ id: "c1", service_rows: [], dentists: [], persona: null, branding: null, ultramsg_instance_id: "123", meta_phone_number_id: "999", ...r } as never).wa;
+  const secrets = { ultramsg_token: "u", webhook_secret: "w", meta_token: "m" };
+  expect(row({ clinic_secrets: secrets })).toEqual({ provider: "ultramsg", instanceId: "123", token: "u" }); // before 0013: no wa_provider
+  expect(row({ clinic_secrets: secrets, wa_provider: "meta" })).toEqual({ provider: "meta", phoneNumberId: "999", token: "m" });
+  expect(row({ clinic_secrets: { ...secrets, meta_token: null }, wa_provider: "meta" })).toBeNull();
+  expect(row({ clinic_secrets: null, wa_provider: "meta" })).toBeNull();
+});

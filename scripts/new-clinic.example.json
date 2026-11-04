@@ -1,0 +1,27 @@
+{
+  "slug": "bright-smile-sample",
+  "name": "Bright Smile Dental (sample data)",
+  "utc_offset_minutes": 240,
+  "phone": "+971 4 000 0456",
+  "address": "Office 3, Al Barsha 1, Dubai (sample address)",
+  "maps_url": "https://maps.google.com/?q=Al+Barsha+Dubai",
+  "hours": {
+    "sat": [["09:00", "21:00"]], "sun": [["09:00", "21:00"]], "mon": [["09:00", "21:00"]],
+    "tue": [["09:00", "21:00"]], "wed": [["09:00", "21:00"]], "thu": [["09:00", "21:00"]]
+  },
+  "insurers": ["Daman", "AXA"],
+  "faq": [{ "q": "Is there parking?", "a": "Yes, free parking behind the building." }],
+  "persona": { "name": "Sara" },
+  "branding": { "accent": "#1d4ed8" },
+  "services": [
+    { "name": "Check-up", "name_ar": "فحص", "minutes": 30, "price_aed": 150 },
+    { "name": "Cleaning", "name_ar": "تنظيف", "minutes": 45, "price_aed": 300 }
+  ],
+  "dentists": [
+    { "name": "Dr. Sample One", "title": "General dentist", "color": "#2563eb",
+      "hours": { "sat": [["09:00", "17:00"]], "mon": [["09:00", "17:00"]], "wed": [["09:00", "17:00"]] },
+      "services": ["Check-up", "Cleaning"] }
+  ],
+  "owner": "owner@brightsmile.test",
+  "staff": ["staff@brightsmile.test"]
+}

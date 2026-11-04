@@ -5,6 +5,8 @@ import { refresh } from "next/cache";
 import { clashes, hoursInside } from "@/lib/booking";
 import { deskConfig, forgetClinic } from "@/lib/clinics";
 import { desk } from "@/lib/dashboard";
+import { logEvent } from "@/lib/events";
+import { wipePlan } from "@/lib/wipe";
 import { z } from "zod";
 import { DAYS, toUtc, type Hours } from "@/lib/slots";
 
@@ -160,3 +162,39 @@ export const deletePatients = async (list: string[]) => remove("patients", list,
 export const deleteVisits = async (list: string[]) => remove("appointments", list, "visits");
 export const deleteService = async (id: string) => remove("services", [id], "service");
 export const deleteDentist = async (id: string) => remove("dentists", [id], "dentist");
+
+// Settings > Data: the owner clears whole categories. The typed clinic name is the "are you sure".
+// ponytail: separate deletes, not one transaction; a failure midway reports what went. Move into a SQL function if that ever happens.
+export async function wipeData(kinds: string[], typedName: string): Promise<SaveResult & { done?: string[] }> {
+  const o = await owner();
+  if ("error" in o) return o;
+  const plan = wipePlan(kinds);
+  if (!plan) return { error: "Pick what to delete." };
+  const { data: c } = await o.sb.from("clinics").select("name").eq("id", o.clinicId).single();
+  if (!c || typedName.trim() !== c.name.trim()) return { error: "Type the clinic name exactly to confirm." };
+
+  const cleared: string[] = [];
+  for (const kind of plan) {
+    let error: { message: string } | null = null;
+    if (kind === "chats") {
+      ({ error } = await o.sb.from("messages").delete().eq("clinic_id", o.clinicId));
+      // Conversations carry no clinic_id: scope them by this clinic's patients, in chunks (an owner may own several clinics).
+      const { data: pts, error: pe } = await o.sb.from("patients").select("id").eq("clinic_id", o.clinicId);
+      error ??= pe;
+      const ids = (pts ?? []).map((p) => p.id);
+      for (let i = 0; !error && i < ids.length; i += 200) ({ error } = await o.sb.from("conversations").delete().in("patient_id", ids.slice(i, i + 200)));
+    } else {
+      const table = { calendar: "appointments", activity: "agent_events", patients: "patients", services: "services", dentists: "dentists" }[kind];
+      ({ error } = await o.sb.from(table).delete().eq("clinic_id", o.clinicId));
+    }
+    if (error) {
+      done(o.clinicId); // a failed step may still have deleted part of its rows
+      return { error: `Could not delete ${kind}.${cleared.length ? ` Already deleted: ${cleared.join(", ")}.` : ""}`, done: cleared };
+    }
+    cleared.push(kind);
+  }
+  if (!plan.includes("activity"))
+    await logEvent(o.sb, { clinicId: o.clinicId, actor: "staff", kind: "data_wipe", level: "warn", summary: `Owner deleted all ${plan.join(", ")}` });
+  done(o.clinicId);
+  return { done: cleared };
+}

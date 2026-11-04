@@ -10,7 +10,7 @@ export async function POST(request: Request) {
   const payload = await request.json().catch(() => null);
   const msg = parseWebhook(payload);
   const clinic = msg ? await clinicByInstance(msg.instanceId) : null;
-  if (msg && !(clinic?.active && clinic.wa && secretMatches(secret, clinic.webhook_secret ?? undefined)))
+  if (msg && !(clinic?.active && clinic.wa?.provider === "ultramsg" && secretMatches(secret, clinic.webhook_secret ?? undefined)))
     return new Response("forbidden", { status: 403 });
 
   // While the bot runs on a personal number, only answer listed testers (comma-separated chat ids).

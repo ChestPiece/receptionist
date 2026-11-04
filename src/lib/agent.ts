@@ -6,7 +6,7 @@ import { allow, db, logMessages, logUsage } from "./db";
 import { reviewAndLog } from "./reviewer";
 import { emergencyReply, isEmergency, isStop, stopReply, unforge } from "./safety";
 import { runSara, wroteData } from "./sara";
-import { markRead, sendText, type IncomingMessage } from "./whatsapp";
+import { fetchMedia, markRead, sendText, type IncomingMessage, type WaCreds } from "./whatsapp";
 
 // ponytail: keep the last 14 patient turns, cut at a user message so no tool call loses its output. Summarize if long chats matter.
 export function trimHistory(items: AgentInputItem[], turns = 14) {
@@ -27,8 +27,8 @@ export function spokenHistory(items: AgentInputItem[], turns = 10) {
 }
 
 // Returns null when the note is too long to transcribe (cost cap).
-async function transcribe(url: string) {
-  const audio = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+async function transcribe(audio: Response | null) {
+  if (!audio) throw new Error("voice download failed: no media");
   if (!audio.ok || !audio.body) throw new Error(`voice download failed: ${audio.status}`);
   if (Number(audio.headers.get("content-length")) > MAX_VOICE_BYTES) return null;
   // Count bytes while reading: a chunked reply has no content-length, so never buffer more than the cap.
@@ -57,11 +57,11 @@ async function transcribe(url: string) {
   return ((await res.json()) as { text: string }).text;
 }
 
-async function toText(msg: IncomingMessage) {
-  if ((msg.type === "ptt" || msg.type === "audio") && msg.mediaUrl) {
+async function toText(msg: IncomingMessage, wa: WaCreds) {
+  if ((msg.type === "ptt" || msg.type === "audio") && (msg.mediaUrl || msg.mediaId)) {
     // ponytail: redirects are followed; pin the UltraMsg media host here once a real voice-note URL is seen in logs.
-    if (!safeMediaUrl(msg.mediaUrl)) return "[patient sent a voice note that could not be played; ask them to type it]";
-    const heard = await transcribe(msg.mediaUrl);
+    if (msg.mediaUrl && !safeMediaUrl(msg.mediaUrl)) return "[patient sent a voice note that could not be played; ask them to type it]";
+    const heard = await transcribe(await fetchMedia(wa, msg));
     return heard === null ? "[patient sent a very long voice note; ask them kindly to type it or send a shorter one]" : `[voice note] ${capText(unforge(heard))}`;
   }
   if (msg.type !== "chat") return `[patient sent a ${msg.type}${msg.body ? `: ${capText(unforge(msg.body))}` : ""}]`; // Phase 2 stores media
@@ -185,7 +185,7 @@ export async function handleMessage(clinic: Clinic, msg: IncomingMessage) {
       else if (count === RATE_MAX + 1) await send(slowDown(clinic.phone));
       return;
     }
-    markRead(wa, msg.from).catch((e) => console.error("[read]", e.message));
+    markRead(wa, msg.from, msg.id).catch((e) => console.error("[read]", e.message));
     if (patientError) throw patientError;
 
     const loadHistory = async () => {
@@ -194,7 +194,7 @@ export async function handleMessage(clinic: Clinic, msg: IncomingMessage) {
       return { convo: data, history: trimHistory((data?.history ?? []) as AgentInputItem[]) };
     };
 
-    const own = await toText(msg);
+    const own = await toText(msg, wa);
     // Safety first: fixed emergency reply, even when staff have paused the bot. The model does not run, so no second reply.
     if (isEmergency(own)) {
       const reply = emergencyReply(own, clinic.phone);

@@ -38,3 +38,11 @@ export function freeSlots(
   }
   return out;
 }
+
+// Was the clinic open at this moment (clinic time)? Booked-while-closed is Sara's after-hours proof.
+export function isOpenAt(at: Date, hours: Hours, offsetMin: number) {
+  const date = localDate(at, offsetMin);
+  const time = localTime(at, offsetMin);
+  const day = DAYS[new Date(`${date}T00:00:00Z`).getUTCDay()];
+  return (hours[day] ?? []).some(([open, close]) => time >= open && time < close);
+}

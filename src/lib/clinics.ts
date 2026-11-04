@@ -26,18 +26,22 @@ export type Clinic = {
   branding: { logo?: string; accent?: string };
   staff_whatsapp: string | null;
   ultramsg_instance_id: string | null;
+  wa_provider?: "ultramsg" | "meta"; // optional until 0013 is pasted
+  meta_phone_number_id?: string | null;
+  meta_templates?: Partial<Record<"reminder" | "followup", { name: string; lang: string }>>;
   active: boolean;
   wa: WaCreds | null; // null = WhatsApp not connected
   webhook_secret: string | null;
 };
 
 type Row = Omit<Clinic, "wa" | "webhook_secret" | "dentists" | "services"> & {
-  clinic_secrets: { ultramsg_token: string; webhook_secret: string } | null;
+  clinic_secrets: { ultramsg_token: string | null; webhook_secret: string; meta_token?: string | null } | null;
   service_rows: Service[];
   dentists: (Omit<Dentist, "service_ids"> & { dentist_services: { service_id: string }[] })[];
 };
 
-const SELECT = "*, clinic_secrets(ultramsg_token, webhook_secret), service_rows:services(*), dentists(*, dentist_services(service_id))";
+// clinic_secrets(*): works before and after 0013 adds meta_token.
+const SELECT = "*, clinic_secrets(*), service_rows:services(*), dentists(*, dentist_services(service_id))";
 
 // Sorted by `sort`, then name. The legacy clinics.services jsonb is ignored.
 const bySortName = (a: { sort: number; name: string }, b: { sort: number; name: string }) => a.sort - b.sort || a.name.localeCompare(b.name);
@@ -49,9 +53,17 @@ export function toClinic({ clinic_secrets: s, service_rows, dentists, ...row }: 
     dentists: [...dentists].sort(bySortName).map(({ dentist_services, ...d }) => ({ ...d, service_ids: dentist_services.map((x) => x.service_id) })),
     persona: row.persona ?? {},
     branding: row.branding ?? {},
-    wa: s && row.ultramsg_instance_id ? { instanceId: row.ultramsg_instance_id, token: s.ultramsg_token } : null,
+    meta_templates: row.meta_templates ?? {},
+    wa: waCreds(row, s),
     webhook_secret: s?.webhook_secret ?? null,
   };
+}
+
+// The clinic's chosen provider, only when its credentials are all there (null = WhatsApp not connected).
+function waCreds(row: Pick<Clinic, "wa_provider" | "ultramsg_instance_id" | "meta_phone_number_id">, s: Row["clinic_secrets"]): WaCreds | null {
+  if (!s) return null;
+  if (row.wa_provider === "meta") return row.meta_phone_number_id && s.meta_token ? { provider: "meta", phoneNumberId: row.meta_phone_number_id, token: s.meta_token } : null;
+  return row.ultramsg_instance_id && s.ultramsg_token ? { provider: "ultramsg", instanceId: row.ultramsg_instance_id, token: s.ultramsg_token } : null;
 }
 
 export const personaName = (c: Pick<Clinic, "persona">) => c.persona?.name || "Sara";
@@ -82,6 +94,13 @@ export async function clinicByInstance(instanceId: string): Promise<Clinic | nul
   const id = normInstance(instanceId);
   for (const { clinic, at } of cache.values()) if (clinic.ultramsg_instance_id === id && Date.now() - at < TTL) return clinic;
   const { data, error } = await db().from("clinics").select(SELECT).eq("ultramsg_instance_id", id).maybeSingle();
+  if (error) throw error;
+  return data ? remember(toClinic(data as Row)) : null;
+}
+
+export async function clinicByMetaNumber(phoneNumberId: string): Promise<Clinic | null> {
+  for (const { clinic, at } of cache.values()) if (clinic.meta_phone_number_id === phoneNumberId && Date.now() - at < TTL) return clinic;
+  const { data, error } = await db().from("clinics").select(SELECT).eq("meta_phone_number_id", phoneNumberId).maybeSingle();
   if (error) throw error;
   return data ? remember(toClinic(data as Row)) : null;
 }

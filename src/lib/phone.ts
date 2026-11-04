@@ -6,3 +6,11 @@ export function normUaePhone(raw: string): string | null {
 }
 
 export const waIdOf = (digits: string) => `${digits}@c.us`;
+
+// The number staff dial or open in WhatsApp, as digits with country code ("971501234567"), or null.
+// A typed phone wins over the WhatsApp id; a foreign number is kept as its digits.
+export function contactDigits(phone: string | null, waId: string | null): string | null {
+  const typed = phone ? normUaePhone(phone) ?? phone.replace(/\D/g, "").replace(/^00/, "") : "";
+  const d = typed || (waId ?? "").replace(/@.*/, "").replace(/\D/g, "");
+  return d.length >= 8 && d.length <= 15 ? d : null;
+}

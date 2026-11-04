@@ -42,3 +42,15 @@ test("local time conversion uses the clinic offset", () => {
   expect(d.toISOString()).toBe("2026-10-22T05:00:00.000Z");
   expect([localDate(d, UAE), localTime(d, UAE)]).toEqual(["2026-10-22", "09:00"]);
 });
+
+import { isOpenAt } from "./slots";
+test("isOpenAt: inside the clinic's opening windows, in clinic time", () => {
+  const hours = { mon: [["09:00", "13:00"], ["16:00", "21:00"]] as [string, string][] };
+  const dubai = 240;
+  expect(isOpenAt(new Date("2026-11-02T06:30:00Z"), hours, dubai)).toBe(true); // Mon 10:30
+  expect(isOpenAt(new Date("2026-11-02T10:00:00Z"), hours, dubai)).toBe(false); // Mon 14:00, lunch gap
+  expect(isOpenAt(new Date("2026-11-02T17:00:00Z"), hours, dubai)).toBe(false); // Mon 21:00, closing time
+  expect(isOpenAt(new Date("2026-11-02T04:30:00Z"), hours, dubai)).toBe(false); // Mon 08:30
+  expect(isOpenAt(new Date("2026-11-01T22:30:00Z"), hours, dubai)).toBe(false); // Mon 02:30 local, day from clinic time
+  expect(isOpenAt(new Date("2026-11-03T06:30:00Z"), hours, dubai)).toBe(false); // Tuesday: closed
+});
