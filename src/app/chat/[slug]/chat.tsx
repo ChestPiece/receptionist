@@ -3,7 +3,7 @@
 import { Logo } from "@/components/logo";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type DynamicToolUIPart, type UIMessage } from "ai";
-import { ArrowLeftIcon, ArrowUpIcon, ChevronDownIcon, MapPinIcon, PanelLeftIcon, PhoneIcon, PlusIcon, RotateCcwIcon } from "lucide-react";
+import { ArrowLeftIcon, ArrowUpIcon, ChevronDownIcon, MapPinIcon, PanelLeftIcon, PhoneCallIcon, PhoneIcon, PlusIcon, RotateCcwIcon } from "lucide-react";
 import Link from "next/link";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
@@ -19,6 +19,7 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { ThemeToggle } from "@/components/ledger";
 import { fallbackChips, hasMarker, icsFor, splitChips, toolChips, type Chip } from "@/lib/chips";
 import { cn } from "@/lib/utils";
+import { CallBar, useCall } from "./call";
 import type { Service } from "@/lib/clinics";
 import { DAYS, type Hours } from "@/lib/slots";
 
@@ -340,6 +341,18 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, id, star
   }, [paused, check]);
   const send = (text: string) => !busy && text.trim() && sendMessage({ text });
 
+  // Voice call: each finished spoken turn lands in the thread as a bubble (ids start with "c", never "s" = staff).
+  const turnNo = useRef(0);
+  const call = useCall({
+    slug,
+    visitorId: id,
+    test,
+    persona,
+    clinicName: name,
+    onTurn: (role, text) => setMessages((ms) => [...ms, { id: `c${Date.now()}-${turnNo.current++}`, role, parts: [{ type: "text", text }] }]),
+  });
+  const onCall = call.state === "connecting" || call.state === "live";
+
   // Sara "types" her greeting for a beat so the chat opens like a person picked up.
   useEffect(() => {
     const t = setTimeout(() => setGreeted(true), reduce ? 0 : 700);
@@ -354,7 +367,7 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, id, star
   const lastMsg = messages.at(-1);
   const lastUserText = messages.findLast((m) => m.role === "user")?.parts.map((p) => (p.type === "text" ? p.text : "")).join("") ?? "";
   const chips: Chip[] =
-    paused || busy || typedAt === messages.length
+    paused || busy || onCall || typedAt === messages.length
       ? []
       : empty
         ? greeted ? CHIPS.map((label) => ({ label })) : []
@@ -407,13 +420,20 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, id, star
               </div>
             </div>
           </div>
-          {phone && (
-            <Button asChild size="sm" variant="outline">
-              <a href={`tel:${phone}`} aria-label="Call the clinic">
-                <PhoneIcon className="size-4" /> <span className="hidden sm:inline">Call clinic</span>
-              </a>
-            </Button>
-          )}
+          <div className="flex shrink-0 items-center gap-2">
+            {!paused && !onCall && (
+              <Button size="sm" variant="outline" className="border-primary/40 text-primary hover:text-primary" aria-label={`Call ${persona}`} onClick={() => void call.start()} disabled={busy}>
+                <PhoneCallIcon className="size-4" /> <span className="hidden sm:inline">Call {persona}</span>
+              </Button>
+            )}
+            {phone && (
+              <Button asChild size="sm" variant="outline">
+                <a href={`tel:${phone}`} aria-label="Call the clinic">
+                  <PhoneIcon className="size-4" /> <span className="hidden sm:inline">Call clinic</span>
+                </a>
+              </Button>
+            )}
+          </div>
         </header>
 
         <Conversation className="flex-1">
@@ -507,6 +527,14 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, id, star
               ))}
             </div>
           )}
+          {call.error && (
+            <p role="alert" className="text-center text-sm text-alert">
+              {call.error}
+            </p>
+          )}
+          {onCall ? (
+            <CallBar call={call} persona={persona} />
+          ) : (
           <PromptInput
             onSubmit={({ text }) => void send(text)}
             className="[&_[data-slot=input-group]]:h-auto [&_[data-slot=input-group]]:items-end [&_[data-slot=input-group]]:rounded-2xl[&_[data-slot=input-group]]:bg-card [&_[data-slot=input-group]]:shadow-sm"
@@ -520,6 +548,7 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, id, star
               </PromptInputSubmit>
             </InputGroupAddon>
           </PromptInput>
+          )}
           <p className="text-center text-[11px] text-muted-foreground">{persona} is a virtual assistant. In an emergency, call 998.</p>
         </div>
       </div>

@@ -14,7 +14,7 @@ import { ReplyBox } from "./reply-box";
 
 export const metadata = { title: "Inbox" };
 
-type Channel = "whatsapp" | "web";
+type Channel = "whatsapp" | "web" | "voice";
 type Row = { patient_id: string; name: string | null; phone: string | null; wa_id: string | null; channel: Channel; role: ThreadMsg["role"]; body: string; created_at: string; last_id: number; bot_paused: boolean | null; updated_at: string | null };
 const TABS = [
   { f: undefined, label: "All" },
@@ -41,7 +41,7 @@ export default async function Inbox({ searchParams }: PageProps<"/dashboard/inbo
   const testIds = new Set((tests ?? []).map((t) => t.id as string));
   const all = (rows ?? []) as Row[];
   const waiting = new Set(all.filter((r) => !testIds.has(r.patient_id) && stillPaused(r.updated_at ? { bot_paused: !!r.bot_paused, updated_at: r.updated_at } : null)).map((r) => r.patient_id));
-  const list = all.filter((r) => (f === "test" ? testIds.has(r.patient_id) : !testIds.has(r.patient_id) && (f === "staff" ? waiting.has(r.patient_id) : f === "whatsapp" || f === "web" ? r.channel === f : true)));
+  const list = all.filter((r) => (f === "test" ? testIds.has(r.patient_id) : !testIds.has(r.patient_id) && (f === "staff" ? waiting.has(r.patient_id) : f === "whatsapp" ? r.channel === "whatsapp" : f === "web" ? r.channel !== "whatsapp" : true)));
   const current = all.find((r) => r.patient_id === p) ?? list[0];
   const open = current?.patient_id;
 
@@ -165,6 +165,6 @@ export default async function Inbox({ searchParams }: PageProps<"/dashboard/inbo
 
 const ChannelTag = ({ channel }: { channel: Channel }) => (
   <span className={cn("shrink-0 rounded px-1.5 py-px text-[10.5px] font-medium text-foreground", channel === "whatsapp" ? "bg-sage-soft" : "bg-web-soft")}>
-    {channel === "whatsapp" ? "WhatsApp" : "Website"}
+    {channel === "whatsapp" ? "WhatsApp" : channel === "voice" ? "Call" : "Website"}
   </span>
 );

@@ -14,6 +14,17 @@ export function trimHistory(items: AgentInputItem[], turns = 14) {
   return starts.length > turns ? items.slice(starts[starts.length - turns]) : items;
 }
 
+// The last typed or spoken turns as plain lines, so a call picks up where the chat left off.
+export function spokenHistory(items: AgentInputItem[], turns = 10) {
+  const text = (c: unknown) =>
+    typeof c === "string" ? c : Array.isArray(c) ? c.map((p) => (p && typeof p === "object" && "text" in p ? String(p.text) : "")).join(" ") : "";
+  return items
+    .flatMap((i) => ("role" in i && (i.role === "user" || i.role === "assistant") ? [`${i.role === "user" ? "Patient" : "Sara"}: ${splitChips(text(i.content)).text.trim()}`] : []))
+    .filter((l) => !l.endsWith(": "))
+    .slice(-turns * 2)
+    .join("\n");
+}
+
 // Returns null when the note is too long to transcribe (cost cap).
 async function transcribe(url: string) {
   const audio = await fetch(url);

@@ -1,6 +1,6 @@
 import { expect, test, vi } from "vitest";
 import type { Clinic } from "./clinics";
-import { bookMany, buildInstructions, cleanName, cleanPhone } from "./sara";
+import { bookMany, buildInstructions, cleanName, cleanPhone, READ_BACK, runTool, toolSchemas } from "./sara";
 
 const clinic: Clinic = {
   id: "c1",
@@ -99,4 +99,27 @@ test("the web prompt shows a phone on file; WhatsApp gets no chips rule", () => 
   expect(buildInstructions(clinic, "Ali", "web", now, "971501234567")).toContain("mobile 971501234567 on file");
   expect(buildInstructions(clinic, null, "web", now)).toContain("save_contact");
   expect(buildInstructions(clinic, null, "whatsapp", now)).not.toContain("[[chips:");
+});
+
+test("the voice prompt is spoken: no chips, no chat wording, read-back before book", () => {
+  const p = buildInstructions(clinic, null, "voice", new Date("2026-10-30T05:00:00Z"), "971501234567");
+  expect(p).toContain("live voice call");
+  expect(p).toContain("mobile 971501234567 on file");
+  expect(p).toContain("Is that right?");
+  for (const web of ["[[chips:", "**bold**", "tappable buttons", "message here to change it", "emoji, only"]) expect(p).not.toContain(web);
+});
+
+test("voice tools: schemas for the realtime session, no save_contact or book_many", () => {
+  const names = toolSchemas().map((t) => t.name);
+  expect(names).toContain("book");
+  expect(names).not.toContain("save_contact");
+  expect(names).not.toContain("book_many");
+  const book = toolSchemas().find((t) => t.name === "book")!;
+  expect(Object.keys(book.parameters.properties as object)).toContain("read_back_confirmed");
+});
+
+test("voice book without a confirmed read-back books nothing", async () => {
+  const args = { service: "Cleaning", date: "2026-11-05", time: "10:00", patient_name: "Omar", patient_phone: "0501112233", dentist: null, visit_for: null, read_back_confirmed: false };
+  expect(await runTool(clinic, { id: "p1", name: null }, "book", JSON.stringify(args))).toBe(READ_BACK);
+  expect(await runTool(clinic, { id: "p1", name: null }, "save_contact", "{}")).toMatch(/Unknown tool/);
 });
