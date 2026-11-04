@@ -107,6 +107,8 @@ test("the voice prompt is spoken: no chips, no chat wording, read-back before bo
   expect(p).toContain("live voice call");
   expect(p).toContain("mobile 971501234567 on file");
   expect(p).toContain("Is that right?");
+  expect(p).toContain("already said in this call"); // a name said early in the call is not asked for again
+  expect(buildInstructions(clinic, null, "web", new Date())).not.toContain("already said in this call");
   for (const web of ["[[chips:", "**bold**", "tappable buttons", "message here to change it", "emoji, only"]) expect(p).not.toContain(web);
 });
 

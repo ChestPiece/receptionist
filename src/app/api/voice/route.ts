@@ -9,7 +9,8 @@ import { logEvent } from "@/lib/events";
 import { buildInstructions, toolSchemas } from "@/lib/sara";
 import { ipOf, overRateLimit, sameOrigin, upsertVisitor } from "@/lib/visitor";
 
-const MODEL = process.env.OPENAI_REALTIME_MODEL ?? "gpt-realtime-2.1-mini";
+// Full model: better at remembering what the caller said and at tool use. Set OPENAI_REALTIME_MODEL=gpt-realtime-2.1-mini to A/B.
+const MODEL = process.env.OPENAI_REALTIME_MODEL ?? "gpt-realtime-2.1";
 const CALLS_PER_HOUR = 3;
 
 const Body = z.object({ slug: z.string().max(64), visitorId: z.uuid(), test: z.boolean().optional(), sdp: z.string().min(1).max(20_000) });
@@ -49,8 +50,9 @@ export async function POST(req: Request) {
       input: {
         noise_reduction: { type: "near_field" },
         transcription: { model: "gpt-4o-mini-transcribe" }, // for the transcript; the model hears the audio itself
-        // semantic_vad waits when the caller sounds unfinished, so "hm" or a pause mid-sentence does not trigger a reply
-        turn_detection: { type: "semantic_vad", eagerness: "auto", create_response: true, interrupt_response: true },
+        // semantic_vad waits when the caller sounds unfinished. "auto" (medium) left long gaps before replies; "high" answers sooner.
+        // If callers get cut off while saying a phone number, go back to "auto".
+        turn_detection: { type: "semantic_vad", eagerness: "high", create_response: true, interrupt_response: true },
       },
       output: { voice: process.env.OPENAI_REALTIME_VOICE ?? "marin" },
     },

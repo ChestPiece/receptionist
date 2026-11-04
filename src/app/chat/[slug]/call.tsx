@@ -104,6 +104,9 @@ export function useCall(o: { slug: string; visitorId: string; test?: boolean; pe
         }
       }));
     let tools: Promise<void>[] = [];
+    // Timing log for live tests (no transcript or tool args): caller stops talking to Sara's first audio, tool round trips, barge-ins.
+    let stoppedAt = 0;
+    let talking = false;
     const resetIdle = () => {
       clearTimeout(l.idle);
       l.idle = setTimeout(end, IDLE_MS);
@@ -123,13 +126,21 @@ export function useCall(o: { slug: string; visitorId: string; test?: boolean; pe
           active = true;
           break;
         case "input_audio_buffer.speech_started":
+          if (talking) console.info("[call] interrupted");
           resetIdle();
           break;
+        case "input_audio_buffer.speech_stopped":
+          stoppedAt = performance.now();
+          break;
         case "output_audio_buffer.started":
+          if (stoppedAt) console.info(`[call] reply ${Math.round(performance.now() - stoppedAt)}ms`);
+          stoppedAt = 0;
+          talking = true;
           setSpeaking(true);
           break;
         case "output_audio_buffer.stopped":
         case "output_audio_buffer.cleared":
+          talking = false;
           setSpeaking(false);
           break;
         case "conversation.item.input_audio_transcription.completed":
@@ -144,11 +155,15 @@ export function useCall(o: { slug: string; visitorId: string; test?: boolean; pe
         case "response.output_item.done": {
           const item = e.item as { type: string; name: string; call_id: string; arguments: string } | undefined;
           if (item?.type !== "function_call") break;
+          const t0 = performance.now();
           tools.push(
             post("/api/voice/tool", { name: item.name, args: item.arguments })
               .then((r) => (r.ok ? (r.json() as Promise<{ output: string }>) : { output: TOOL_FAILED }))
               .catch(() => ({ output: TOOL_FAILED }))
-              .then(({ output }) => void send({ type: "conversation.item.create", item: { type: "function_call_output", call_id: item.call_id, output } })),
+              .then(({ output }) => {
+                console.info(`[call] tool ${item.name} ${Math.round(performance.now() - t0)}ms`);
+                send({ type: "conversation.item.create", item: { type: "function_call_output", call_id: item.call_id, output } });
+              }),
           );
           break;
         }
