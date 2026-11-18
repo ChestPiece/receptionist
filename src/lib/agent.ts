@@ -4,6 +4,7 @@ import type { Clinic } from "./clinics";
 import { splitChips } from "./chips";
 import { allow, db, logMessages, logUsage } from "./db";
 import { reviewAndLog } from "./reviewer";
+import { tidy } from "./tidy";
 import { emergencyReply, isEmergency, isStop, stopReply, unforge } from "./safety";
 import { replyText, runSara, wroteData } from "./sara";
 import { fetchMedia, markRead, sendText, type IncomingMessage, type WaCreds } from "./whatsapp";
@@ -113,12 +114,7 @@ export async function appendHistory(patientId: string, items: AgentInputItem[], 
   if (touch) await sb.from("conversations").update({ updated_at: new Date().toISOString() }).eq("patient_id", patientId);
 }
 
-// WhatsApp-safe punctuation: no en/em dashes (they read as machine-written). Hyphens in words stay.
-export const tidy = (text: string) =>
-  splitChips(text).text // a web-only chips marker must never reach WhatsApp
-    .replace(/(\d(?:\s?[ap]m)?)\s*[–—]\s*(?=\d)/gi, "$1 to ")
-    .replace(/\s*[–—]\s*/g, ", ")
-    .replace(/ +- +/g, ", ");
+export { tidy };
 
 const PAUSE_MS = 30 * 60_000;
 // ponytail: a staff pause lapses after 30 min without staff activity, so a missed handoff never leaves a dead chat. Phase 4 inbox refreshes it.

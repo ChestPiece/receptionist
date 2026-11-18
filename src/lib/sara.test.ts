@@ -112,10 +112,10 @@ test("the voice prompt is spoken: no chips, no chat wording, read-back before bo
   for (const web of ["[[chips:", "**bold**", "tappable buttons", "message here to change it", "emoji, only"]) expect(p).not.toContain(web);
 });
 
-test("voice tools: schemas for the realtime session, no save_contact or book_many", () => {
+test("voice tools: schemas for the realtime session, save_contact but no book_many", () => {
   const names = toolSchemas().map((t) => t.name);
   expect(names).toContain("book");
-  expect(names).not.toContain("save_contact");
+  expect(names).toContain("save_contact");
   expect(names).not.toContain("book_many");
   const book = toolSchemas().find((t) => t.name === "book")!;
   expect(Object.keys(book.parameters.properties as object)).toContain("read_back_confirmed");
@@ -124,7 +124,7 @@ test("voice tools: schemas for the realtime session, no save_contact or book_man
 test("voice book without a confirmed read-back books nothing", async () => {
   const args = { service: "Cleaning", date: "2026-11-05", time: "10:00", patient_name: "Omar", patient_phone: "0501112233", dentist: null, visit_for: null, read_back_confirmed: false };
   expect(await runTool(clinic, { id: "p1", name: null }, "book", JSON.stringify(args))).toBe(READ_BACK);
-  expect(await runTool(clinic, { id: "p1", name: null }, "save_contact", "{}")).toMatch(/Unknown tool/);
+  expect(await runTool(clinic, { id: "p1", name: null }, "book_many", "{}")).toMatch(/Unknown tool/);
 });
 
 describe("replyText", () => {

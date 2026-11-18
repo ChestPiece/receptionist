@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { demoCutoff, demoDates, deskView, seedPlan } from "./demo";
+import { demoCutoff, demoDates, deskView, freshBlock, seedPlan } from "./demo";
 
 const OFF = 240; // Dubai
 const dentists = [{ id: "d1", name: "Dr. One" }, { id: "d2", name: "Dr. Two" }];
@@ -41,4 +41,10 @@ test("seedPlan: only inside each dentist's hours, nothing on a closed day", () =
   expect(plan.filter((p) => p.dentist_id === "d1").map((p) => p.time)).toEqual(["10:00"]); // 14:00 and 18:00 are after 13:00
   expect(plan.filter((p) => p.dentist_id === "d2").map((p) => p.time)).toEqual(["11:30", "16:30"]);
   expect(seedPlan("2026-11-06", ds, () => 45)).toEqual([]); // Friday: closed
+});
+
+test("freshBlock: first poll only records, later polls report the new own booking", () => {
+  expect(freshBlock(null, ["a"])).toBeNull();
+  expect(freshBlock(["a"], ["a"])).toBeNull();
+  expect(freshBlock(["a"], ["a", "b"])).toBe("b");
 });

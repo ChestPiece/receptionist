@@ -6,6 +6,7 @@
 import { MicIcon, MicOffIcon, PhoneOffIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { voiceText } from "@/lib/turns";
 import { cn } from "@/lib/utils";
 
 const MAX_MS = 8 * 60_000; // hard stop per call
@@ -145,7 +146,7 @@ export function useCall(o: { slug: string; visitorId: string; test?: boolean; pe
           break;
         case "conversation.item.input_audio_transcription.completed":
         case "response.output_audio_transcript.done": {
-          const text = String(e.transcript ?? "").trim();
+          const text = voiceText(String(e.transcript ?? "").trim());
           if (!text) break;
           const caller = e.type.startsWith("conversation");
           opts.current.onTurn(caller ? "user" : "assistant", text);

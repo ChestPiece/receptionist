@@ -19,6 +19,7 @@ import { Sidebar, SidebarInset, SidebarProvider, SidebarRail, SidebarTrigger } f
 import { ThemeToggle } from "@/components/ledger";
 import { fallbackChips, hasMarker, icsFor, splitChips, toolChips, type Chip } from "@/lib/chips";
 import { cn } from "@/lib/utils";
+import { joinTurn } from "@/lib/turns";
 import { CallBar, useCall } from "./call";
 import type { Service } from "@/lib/clinics";
 import { DAYS, type Hours } from "@/lib/slots";
@@ -351,7 +352,15 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, embedded
     test,
     persona,
     clinicName: name,
-    onTurn: (role, text) => setMessages((ms) => [...ms, { id: `c${Date.now()}-${turnNo.current++}`, role, parts: [{ type: "text", text }] }]),
+    // Fragments of one spoken turn (cut by a pause or a tool call) merge into the last call bubble.
+    onTurn: (role, text) =>
+      setMessages((ms) => {
+        const lm = ms.at(-1);
+        const lp = lm?.parts[0];
+        const joined = lm?.id.startsWith("c") && lp?.type === "text" ? joinTurn({ role: lm.role, text: lp.text }, role, text) : null;
+        if (lm && joined) return [...ms.slice(0, -1), { ...lm, parts: [{ type: "text", text: joined }] }];
+        return [...ms, { id: `c${Date.now()}-${turnNo.current++}`, role, parts: [{ type: "text", text }] }];
+      }),
   });
   const onCall = call.state === "connecting" || call.state === "live";
 
@@ -362,6 +371,8 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, embedded
   }, [reduce]);
 
   const empty = messages.length === 0;
+  // A call that opens the thread speaks its own greeting: skip the typed one so only one shows.
+  const spokenOpen = empty ? onCall : messages[0].id.startsWith("c");
   const [typedAt, setTypedAt] = useState(-1); // message count when the visitor started typing: chips hide until the next message
   const lastMsg = messages.at(-1);
   const lastUserText = messages.findLast((m) => m.role === "user")?.parts.map((p) => (p.type === "text" ? p.text : "")).join("") ?? "";
@@ -433,7 +444,7 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, embedded
               </h1>
             )}
             <AnimatePresence mode="wait" initial={false}>
-              {greeted || !empty ? (
+              {spokenOpen ? null : greeted || !empty ? (
                 <Enter key="greeting">
                   <div className="flex flex-col gap-5">
                     <Message from="assistant">

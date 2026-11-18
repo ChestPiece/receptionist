@@ -23,7 +23,7 @@ const KIND = {
 
 // Week grid: one column per day, 52px per hour. Blocks drop in like cards pinned to a board.
 // `extra(day)` renders more content inside a day column (the landing story's flying booking).
-export function WeekCalendar({ title, days, blocks, from = 9, to = 20, now, aside, extra, fill }: { title: ReactNode; days: Day[]; blocks: Block[]; from?: number; to?: number; now?: { day: number; hour: number }; aside?: ReactNode; extra?: (day: number) => ReactNode; fill?: boolean }) {
+export function WeekCalendar({ title, days, blocks, from = 9, to = 20, now, aside, extra, fill, flash }: { title: ReactNode; days: Day[]; blocks: Block[]; from?: number; to?: number; now?: { day: number; hour: number }; aside?: ReactNode; extra?: (day: number) => ReactNode; fill?: boolean; flash?: string | null }) {
   const reduce = useReducedMotion();
   const hours = Array.from({ length: to - from }, (_, i) => from + i);
   // Mobile shows three days from today (or the first day).
@@ -65,6 +65,7 @@ export function WeekCalendar({ title, days, blocks, from = 9, to = 20, now, asid
                 return (
                   <motion.div
                     key={b.id}
+                    data-block={b.id}
                     className="absolute inset-x-1"
                     style={{ top: (Math.max(b.start, from) - from) * ROW + 2, height: Math.max((b.end - Math.max(b.start, from)) * ROW - 4, 20) }}
                     initial={reduce ? false : { y: -40, rotate: -3, opacity: 0 }}
@@ -73,7 +74,7 @@ export function WeekCalendar({ title, days, blocks, from = 9, to = 20, now, asid
                   >
                     <Tag
                       {...(b.href ? { href: b.href } : {})}
-                      className={cn("block h-full overflow-hidden rounded-[4px] border-s-[3px] px-1.5 py-1 text-[11.5px] leading-tight", KIND[b.kind], b.muted && "opacity-50 line-through", b.href && "transition-shadow hover:ring-2 hover:ring-foreground focus-visible:ring-2 focus-visible:ring-foreground outline-none")}
+                      className={cn("block h-full overflow-hidden rounded-[4px] border-s-[3px] px-1.5 py-1 text-[11.5px] leading-tight", KIND[b.kind], b.muted && "opacity-50 line-through", b.id === flash && "ring-2 ring-web ring-offset-2 ring-offset-card animate-pulse", b.href && "transition-shadow hover:ring-2 hover:ring-foreground focus-visible:ring-2 focus-visible:ring-foreground outline-none")}
                     >
                       <strong className="block truncate font-semibold">{b.title}</strong>
                       <span className="block truncate">{b.name}</span>
