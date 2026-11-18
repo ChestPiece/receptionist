@@ -122,7 +122,7 @@ test("voice tools: schemas for the realtime session, save_contact but no book_ma
 });
 
 test("voice book without a confirmed read-back books nothing", async () => {
-  const args = { service: "Cleaning", date: "2026-11-05", time: "10:00", patient_name: "Omar", patient_phone: "0501112233", dentist: null, visit_for: null, read_back_confirmed: false };
+  const args = { service: "Cleaning", date: "2026-11-05", time: "10:00", patient_name: "Omar", patient_phone: "0501112233", dentist: null, visit_for: null, read_back_confirmed: false, foreign_number_confirmed: false };
   expect(await runTool(clinic, { id: "p1", name: null }, "book", JSON.stringify(args))).toBe(READ_BACK);
   expect(await runTool(clinic, { id: "p1", name: null }, "book_many", "{}")).toMatch(/Unknown tool/);
 });
@@ -137,5 +137,48 @@ describe("replyText", () => {
   });
   it("never returns an older turn, such as a front desk marker before the patient's message", () => {
     expect(replyText("", [assistant("[Front desk] (stepped away)"), user("hello?"), out("", "final_answer")])).toBeUndefined();
+  });
+});
+
+const slots = vi.hoisted(() => ({ search: vi.fn() }));
+vi.mock("./db", () => ({ db: () => ({}) }));
+vi.mock("./booking", async (orig) => ({ ...(await orig<typeof import("./booking")>()), search: slots.search }));
+
+describe("grounding (Sara never works out a weekday herself)", () => {
+  const now = new Date("2026-11-18T08:00:00Z"); // Wednesday
+  it("puts a 14-day calendar after the date line, keeping the cached prefix", () => {
+    const p = buildInstructions(clinic, null, "web", now);
+    expect(p).toMatch(/Next 14 days: Wed 18 Nov = 2026-11-18 \(closed\)/);
+    expect(p).toContain("Thu 19 Nov = 2026-11-19 (open)");
+    expect(p.indexOf("Next 14 days")).toBeGreaterThan(p.indexOf("Today is"));
+    expect(p).toContain("never work out a weekday yourself");
+  });
+
+  it("find_slots labels each day and gives spoken times", async () => {
+    slots.search.mockResolvedValue({ free: { "2026-11-19": [{ time: "09:00", dentistIds: [] }, { time: "16:30", dentistIds: [] }] }, off: [] });
+    const out = JSON.parse(await runTool(clinic, { id: "p1", name: null }, "find_slots", JSON.stringify({ service: clinic.services[0].name, dates: ["2026-11-19"], earliest: null, dentist: null })));
+    expect(out.days[0]).toMatchObject({ date: "2026-11-19", label: "Thursday 19 November", times: ["09:00", "16:30"], say: ["9 am", "4:30 pm"] });
+  });
+
+  it("earliest searches the whole 60-day booking horizon", async () => {
+    slots.search.mockResolvedValue({ free: { "2026-12-20": [{ time: "10:00", dentistIds: [] }] }, off: [] });
+    const out = JSON.parse(await runTool(clinic, { id: "p1", name: null }, "find_slots", JSON.stringify({ service: clinic.services[0].name, dates: [], earliest: true, dentist: null })));
+    expect(slots.search.mock.lastCall![2].days).toBe(60);
+    expect(out.days[0]).toMatchObject({ date: "2026-12-20", label: "Sunday 20 December", say: ["10 am"] });
+  });
+});
+
+describe("voice phone safety", () => {
+  const args = { service: "Check-up", date: "2026-11-19", time: "10:00", patient_name: "Omar", dentist: null, visit_for: null, read_back_confirmed: true, foreign_number_confirmed: false };
+  it("refuses a non-UAE number unless the caller confirmed it is foreign", async () => {
+    expect(await runTool(clinic, { id: "p1", name: null }, "book", JSON.stringify({ ...args, patient_phone: "+44 7700 900123" }))).toMatch(/^Not booked\. That is not a UAE mobile/);
+  });
+  it("refuses a number too short to be a phone even when confirmed foreign", async () => {
+    expect(await runTool(clinic, { id: "p1", name: null }, "book", JSON.stringify({ ...args, patient_phone: "12345", foreign_number_confirmed: true }))).toMatch(/^Not booked\./);
+  });
+  it("the voice prompt lets the caller type the number in the chat box", () => {
+    const p = buildInstructions(clinic, null, "voice", new Date("2026-11-18T08:00:00Z"));
+    expect(p).toContain("type it in the chat box");
+    expect(p).not.toContain('Never say "type"');
   });
 });

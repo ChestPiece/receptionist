@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { clinicBySlug } from "@/lib/clinics";
 import { allow } from "@/lib/db";
+import { READ_TOOLS } from "@/lib/liveAudio";
 import { runTool } from "@/lib/sara";
 import { findVisitor, inCall, sameOrigin } from "@/lib/visitor";
 
@@ -21,7 +22,21 @@ export async function POST(req: Request) {
   if (!patient || !(await inCall(patient.id))) return new Response("no call", { status: 404 });
   if (!(await allow(`voice:${patient.id}`, 150, 600))) return new Response("busy", { status: 429 }); // one call is about 60 posts
   try {
-    return Response.json({ output: await runTool(clinic, patient, name, args) });
+    // A stalled tool must not leave the caller in silence: after 8 s Sara gets a line to say instead. A write keeps
+    // running and may still save, so she checks before trying again (a blind retry could book twice or hit "taken").
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const slow = new Promise<string>((res) => {
+      timer = setTimeout(
+        () =>
+          res(
+            READ_TOOLS.has(name)
+              ? "This is taking longer than expected. Say sorry, and offer to try again or have the front desk call back (handoff_to_staff)."
+              : "This is taking longer than expected and may still go through. Say sorry, call my_appointments to see if it saved, and only then offer to do it again or have the front desk call back (handoff_to_staff).",
+          ),
+        8_000,
+      );
+    });
+    return Response.json({ output: await Promise.race([runTool(clinic, patient, name, args), slow]).finally(() => clearTimeout(timer)) });
   } catch (e) {
     console.error("[voice tool]", name, (e as Error).message);
     return Response.json({ output: "That did not work. Say sorry, and offer handoff_to_staff so the front desk calls back." });

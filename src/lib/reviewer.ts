@@ -5,6 +5,7 @@ import type { Clinic } from "./clinics";
 import { db, logUsage } from "./db";
 import { logEvent, type EventInput } from "./events";
 import { buildInstructions } from "./sara";
+import { reviewModel } from "./llm";
 
 const LABELS = {
   unbacked_claim: "Unbacked claim",
@@ -54,9 +55,11 @@ export function earlierTurns(history: unknown[], n = 12) {
     .join("\n");
 }
 
-const reviewer = new Agent({
+let built: ReturnType<typeof makeReviewer> | undefined;
+const reviewer = () => (built ??= makeReviewer());
+const makeReviewer = () => new Agent({
   name: "Reviewer",
-  model: process.env.OPENAI_REVIEW_MODEL ?? "gpt-5-mini",
+  model: reviewModel(),
   // Default (medium) ran past the 15 s timeout on long turns; minimal was fast but logged non-issues. Low sits between.
   modelSettings: { reasoning: { effort: "low" } },
   outputType: ReviewOut,
@@ -71,7 +74,7 @@ Check for:
 
 export async function reviewTurn(a: { clinic: Clinic; channel: "whatsapp" | "web"; earlier: string; userText: string; reply: string; toolCalls: ToolCall[] }) {
   const input = `Bot instructions:\n${buildInstructions(a.clinic, null, a.channel, new Date())}\n\nEarlier in this chat:\n${a.earlier || "(none)"}\n\nPatient: ${a.userText}\n\nReply: ${a.reply}\n\nTool calls: ${JSON.stringify(a.toolCalls)}`;
-  const r = await run(reviewer, input, { signal: AbortSignal.timeout(15_000) }); // never hold the webhook past maxDuration
+  const r = await run(reviewer(), input, { signal: AbortSignal.timeout(15_000) }); // never hold the webhook past maxDuration
   return { review: r.finalOutput ?? { ok: true, issues: [] }, usage: r.state.usage };
 }
 

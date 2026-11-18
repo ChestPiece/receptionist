@@ -16,3 +16,8 @@ test("contactDigits: what staff dial", () => {
   expect(contactDigits("12", null)).toBeNull();
   expect(contactDigits(null, null)).toBeNull();
 });
+
+test("reads Arabic-Indic and Persian digits, as a caller types them on an Arabic keyboard", () => {
+  expect(normUaePhone("٠٥٠ ١٢٣ ٤٥٦٧")).toBe("971501234567");
+  expect(normUaePhone("۰۵۰۱۲۳۴۵۶۷")).toBe("971501234567");
+});

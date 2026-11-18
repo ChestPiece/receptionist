@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { freeSlots, spreadSlots, localDate, localTime, toUtc, type Hours } from "./slots";
+import { calendarLine, freeSlots, spokenWhen, spreadSlots, localDate, localTime, toUtc, type Hours } from "./slots";
 
 const UAE = 240;
 const hours: Hours = { thu: [["09:00", "10:00"], ["16:00", "17:00"]], fri: [] };
@@ -53,4 +53,16 @@ test("isOpenAt: inside the clinic's opening windows, in clinic time", () => {
   expect(isOpenAt(new Date("2026-11-02T04:30:00Z"), hours, dubai)).toBe(false); // Mon 08:30
   expect(isOpenAt(new Date("2026-11-01T22:30:00Z"), hours, dubai)).toBe(false); // Mon 02:30 local, day from clinic time
   expect(isOpenAt(new Date("2026-11-03T06:30:00Z"), hours, dubai)).toBe(false); // Tuesday: closed
+});
+
+test("spokenWhen gives the weekday and a spoken time, so the model never works out a weekday", () => {
+  expect(spokenWhen("2026-11-21", "16:30")).toBe("Saturday 21 November, 4:30 pm");
+  expect(spokenWhen("2026-11-21", "09:00")).toBe("Saturday 21 November, 9 am");
+  expect(spokenWhen("2026-11-21", "12:15")).toBe("Saturday 21 November, 12:15 pm");
+});
+
+test("calendarLine maps the next days to dates and marks closed days", () => {
+  const line = calendarLine({ hours: { wed: [["09:00", "17:00"]] }, utc_offset_minutes: UAE }, new Date("2026-11-18T08:00:00Z"), 8);
+  expect(line).toMatch(/^Wed 18 Nov = 2026-11-18 \(open\), Thu 19 Nov = 2026-11-19 \(closed\)/);
+  expect(line).toMatch(/Wed 25 Nov = 2026-11-25 \(open\)$/);
 });
