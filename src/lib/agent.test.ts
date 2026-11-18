@@ -1,6 +1,6 @@
 import { user, type AgentInputItem, type RunItem } from "@openai/agents";
-import { expect, test } from "vitest";
-import { capText, lapseMarker, safeMediaUrl, sorry, stillPaused, tidy, trimHistory } from "./agent";
+import { expect, test, vi } from "vitest";
+import { capText, lapseMarker, safeMediaUrl, sorry, stillPaused, tidy, transcribe, trimHistory } from "./agent";
 import { tooFar, wroteData } from "./sara";
 import { isEmergency } from "./safety";
 
@@ -85,4 +85,34 @@ test("trimHistory never starts on an orphan tool result", () => {
   const result = { type: "function_call_result", callId: "c", name: "find_slots", status: "completed", output: "x" } as AgentInputItem;
   const call = { type: "function_call", callId: "d", name: "find_slots", arguments: "{}" } as AgentInputItem;
   expect(trimHistory([result, user("a"), call, user("b")])).toEqual([user("a"), call, user("b")]);
+});
+
+test("trimHistory drops reasoning items saved by the old OpenAI Responses model (Chat Completions rejects them)", () => {
+  const items = [
+    user("hi"),
+    { type: "reasoning", content: [] },
+    { type: "function_call", callId: "c1", name: "find_slots", arguments: "{}" },
+    { type: "function_call_result", callId: "c1", name: "find_slots", status: "completed", output: { type: "text", text: "ok" } },
+  ] as AgentInputItem[];
+  expect(trimHistory(items).map((i) => ("type" in i && i.type ? i.type : "role" in i ? i.role : "?"))).toEqual(["message", "function_call", "function_call_result"]);
+});
+
+const genai = vi.hoisted(() => ({ generateContent: vi.fn() }));
+vi.mock("@google/genai", () => ({ GoogleGenAI: class { models = { generateContent: genai.generateContent }; } }));
+
+test("transcribe sends the voice note to Gemini as inline audio and returns its words", async () => {
+  genai.generateContent.mockResolvedValueOnce({ text: "I need a cleaning tomorrow" });
+  const note = new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "audio/ogg; codecs=opus" } });
+  expect(await transcribe(note)).toBe("I need a cleaning tomorrow");
+  const req = genai.generateContent.mock.calls[0][0];
+  const parts = req.contents[0].parts;
+  expect(parts[0].inlineData).toEqual({ mimeType: "audio/ogg", data: "AQID" });
+  expect(parts[1].text).toBe("Transcribe this voice note word for word. It is English or Arabic. Output only the words.");
+});
+
+test("transcribe skips a note over the size cap without calling Gemini", async () => {
+  genai.generateContent.mockClear();
+  const big = new Response(new Uint8Array(4 * 1024 * 1024));
+  expect(await transcribe(big)).toBeNull();
+  expect(genai.generateContent).not.toHaveBeenCalled();
 });

@@ -411,7 +411,7 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, embedded
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {!paused && !onCall && (
-              <Button size="sm" variant="outline" className="border-primary/40 text-primary hover:text-primary" aria-label={`Call ${persona}`} onClick={() => void call.start()} disabled={busy}>
+              <Button size="sm" variant="outline" className="border-primary/40 text-primary hover:text-primary" aria-label={`Call ${persona}`} onClick={() => void call.start(new AudioContext())} disabled={busy}>
                 <PhoneCallIcon className="size-4" /> <span className="hidden sm:inline">Call {persona}</span>
               </Button>
             )}
@@ -521,15 +521,14 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, embedded
               {call.error}
             </p>
           )}
-          {onCall ? (
-            <CallBar call={call} persona={persona} />
-          ) : (
+          {onCall && <CallBar call={call} persona={persona} />}
+          {/* Stays open during a call: a typed name or number goes into the call, and Sara answers by voice. */}
           <PromptInput
-            onSubmit={({ text }) => void send(text)}
+            onSubmit={({ text }) => void (call.state === "live" ? text.trim() && call.say(text.trim()) : send(text))}
             className="[&_[data-slot=input-group]]:h-auto [&_[data-slot=input-group]]:items-end [&_[data-slot=input-group]]:rounded-2xl [&_[data-slot=input-group]]:bg-card [&_[data-slot=input-group]]:shadow-sm"
           >
             <PromptInputBody>
-              <PromptInputTextarea dir="auto" onChange={() => setTypedAt(messages.length)} placeholder={`Message ${persona}…`} rows={1} className="min-h-0 py-3.5 ps-4" />
+              <PromptInputTextarea dir="auto" onChange={() => setTypedAt(messages.length)} placeholder={onCall ? "Type a name or number here…" : `Message ${persona}…`} rows={1} className="min-h-0 py-3.5 ps-4" />
             </PromptInputBody>
             <InputGroupAddon align="inline-end">
               <PromptInputSubmit status={status} onStop={stop} className="rounded-full">
@@ -537,8 +536,9 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, embedded
               </PromptInputSubmit>
             </InputGroupAddon>
           </PromptInput>
-          )}
-          <p className="text-center text-[11px] text-muted-foreground">{persona} is a virtual assistant. In an emergency, call 998.</p>
+          <p className="text-center text-[11px] text-muted-foreground">
+            {onCall ? "Calls use Google AI. Please don't share medical details." : `${persona} is a virtual assistant. In an emergency, call 998.`}
+          </p>
         </div>
       </SidebarInset>
     </SidebarProvider>

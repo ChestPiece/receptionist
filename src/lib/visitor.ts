@@ -56,11 +56,12 @@ export async function overRateLimit(patientId: string) {
 }
 
 // Tool and turn posts only count during a call this visitor started (a call lasts at most 8 min), and never once staff have the chat.
-export async function inCall(patientId: string) {
+// Returns when that call started (the resume route keeps the original 8 min cap), or null.
+export async function inCall(patientId: string): Promise<string | null> {
   const sb = db();
-  const [{ count }, { data: convo }] = await Promise.all([
-    sb.from("agent_events").select("id", { count: "exact", head: true }).eq("patient_id", patientId).eq("kind", "call").gt("created_at", new Date(Date.now() - 9 * 60_000).toISOString()),
+  const [{ data: call }, { data: convo }] = await Promise.all([
+    sb.from("agent_events").select("created_at").eq("patient_id", patientId).eq("kind", "call").gt("created_at", new Date(Date.now() - 9 * 60_000).toISOString()).order("created_at", { ascending: false }).limit(1).maybeSingle(),
     sb.from("conversations").select("bot_paused, updated_at").eq("patient_id", patientId).maybeSingle(),
   ]);
-  return (count ?? 0) > 0 && !stillPaused(convo);
+  return call && !stillPaused(convo) ? (call as { created_at: string }).created_at : null;
 }
