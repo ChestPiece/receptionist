@@ -103,6 +103,7 @@ export function useCall(o: { slug: string; visitorId: string; test?: boolean; pe
     [hangup],
   );
 
+<<<<<<< HEAD
   /** `given` is an AudioContext the click handler created (iOS only lets audio start inside a tap). */
   const start = useCallback(
     async (given?: AudioContext) => {
@@ -131,6 +132,128 @@ export function useCall(o: { slug: string; visitorId: string; test?: boolean; pe
       } catch {
         if (run.current === me) fail("mic");
         return;
+=======
+  const start = useCallback(async () => {
+    if (live.current || state === "connecting") return;
+    const me = ++run.current;
+    const { slug, visitorId, test, persona, clinicName } = opts.current;
+    setError(null);
+    setState("connecting");
+    let mic: MediaStream;
+    try {
+      mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    } catch {
+      return run.current === me && fail("mic");
+    }
+    if (run.current !== me) return mic.getTracks().forEach((t) => t.stop()); // hung up while the mic prompt was open
+    const pc = new RTCPeerConnection();
+    const audio = new Audio();
+    audio.autoplay = true;
+    pc.ontrack = (e) => (audio.srcObject = e.streams[0]);
+    pc.addTrack(mic.getTracks()[0], mic);
+    const dc = pc.createDataChannel("oai-events");
+    const l: Live = { pc, dc, mic, audio };
+    live.current = l;
+
+    const post = (path: string, body: object) =>
+      fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ slug, visitorId, ...body }) });
+    const send = (e: object) => dc.readyState === "open" && dc.send(JSON.stringify(e));
+    // One response at a time: semantic VAD starts its own, so a create sent while one runs waits for response.done.
+    let active = false;
+    let queued: object | null = null;
+    const respond = (response: object = {}) => (active ? (queued = response) : send({ type: "response.create", response }));
+    let saving = Promise.resolve(); // turns are saved in order
+    const saveTurn = (role: "patient" | "assistant", text: string) =>
+      (saving = saving.then(async () => {
+        const r = await post("/api/voice/turn", { role, text }).catch(() => null);
+        const d = r?.ok ? ((await r.json()) as { say: string | null }) : null;
+        // Emergency: the server's fixed reply replaces whatever Sara was about to say.
+        if (d?.say) {
+          send({ type: "response.cancel" });
+          send({ type: "output_audio_buffer.clear" }); // cancel alone lets already-sent audio play out
+          respond({ instructions: `Say exactly this, nothing else: ${d.say}` });
+        }
+      }));
+    let tools: Promise<void>[] = [];
+    // Timing log for live tests (no transcript or tool args): caller stops talking to Sara's first audio, tool round trips, barge-ins.
+    let stoppedAt = 0;
+    let talking = false;
+    const resetIdle = () => {
+      clearTimeout(l.idle);
+      l.idle = setTimeout(end, IDLE_MS);
+    };
+
+    dc.onopen = () => {
+      setState("live");
+      setStartedAt(Date.now());
+      resetIdle();
+      l.max = setTimeout(end, MAX_MS);
+      respond({ instructions: `Greet the caller in one short sentence as ${persona} from ${clinicName}, and ask how you can help.` });
+    };
+    dc.onmessage = (m) => {
+      const e = JSON.parse(String(m.data)) as Ev;
+      switch (e.type) {
+        case "response.created":
+          active = true;
+          break;
+        case "input_audio_buffer.speech_started":
+          if (talking) console.info("[call] interrupted");
+          resetIdle();
+          break;
+        case "input_audio_buffer.speech_stopped":
+          stoppedAt = performance.now();
+          break;
+        case "output_audio_buffer.started":
+          if (stoppedAt) console.info(`[call] reply ${Math.round(performance.now() - stoppedAt)}ms`);
+          stoppedAt = 0;
+          talking = true;
+          setSpeaking(true);
+          break;
+        case "output_audio_buffer.stopped":
+        case "output_audio_buffer.cleared":
+          talking = false;
+          setSpeaking(false);
+          break;
+        case "conversation.item.input_audio_transcription.completed":
+        case "response.output_audio_transcript.done": {
+          const text = String(e.transcript ?? "").trim();
+          if (!text) break;
+          const caller = e.type.startsWith("conversation");
+          opts.current.onTurn(caller ? "user" : "assistant", text);
+          void saveTurn(caller ? "patient" : "assistant", text);
+          break;
+        }
+        case "response.output_item.done": {
+          const item = e.item as { type: string; name: string; call_id: string; arguments: string } | undefined;
+          if (item?.type !== "function_call") break;
+          const t0 = performance.now();
+          tools.push(
+            post("/api/voice/tool", { name: item.name, args: item.arguments })
+              .then((r) => (r.ok ? (r.json() as Promise<{ output: string }>) : { output: TOOL_FAILED }))
+              .catch(() => ({ output: TOOL_FAILED }))
+              .then(({ output }) => {
+                console.info(`[call] tool ${item.name} ${Math.round(performance.now() - t0)}ms`);
+                send({ type: "conversation.item.create", item: { type: "function_call_output", call_id: item.call_id, output } });
+              }),
+          );
+          break;
+        }
+        case "response.done": {
+          active = false;
+          const next = queued;
+          queued = null;
+          // Every tool result of this response is in: let Sara answer with them.
+          if (tools.length) {
+            const pending = tools;
+            tools = [];
+            void Promise.all(pending).then(() => respond(next ?? {}));
+          } else if (next) respond(next);
+          break;
+        }
+        case "error":
+          console.warn("[call]", e.error);
+          break;
+>>>>>>> f9d7af60a6f351d80fadeacea13386f8370a0d44
       }
       if (run.current !== me) return mic.getTracks().forEach((t) => t.stop()); // hung up while the mic prompt was open
       let ctx: AudioContext;

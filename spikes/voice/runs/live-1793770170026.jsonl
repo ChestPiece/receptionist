@@ -1,5 +1,0 @@
-{"t":1597,"kind":"session.created","sessionId":"live_u7_EgPu8p3oMuGR6ZjdJZXVGVzxATx0sNnR"}
-{"t":1896,"kind":"patient","id":"d978ade2-8b59-4243-b009-825501a1c415"}
-{"t":2264,"kind":"call.end","reason":"hangup"}
-{"t":2790,"kind":"sideband.error"}
-{"t":2798,"kind":"sideband.closed","code":1006,"reason":"WebSocket is closed before the connection is established"}
