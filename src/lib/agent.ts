@@ -1,15 +1,21 @@
 // The WhatsApp channel: the per-message handler around the shared agent brain (sara.ts).
 import { assistant, user, type AgentInputItem } from "@openai/agents";
+import { GoogleGenAI } from "@google/genai";
 import type { Clinic } from "./clinics";
 import { splitChips } from "./chips";
 import { allow, db, logMessages, logUsage } from "./db";
 import { reviewAndLog } from "./reviewer";
+import { tidy } from "./tidy";
 import { emergencyReply, isEmergency, isStop, stopReply, unforge } from "./safety";
-import { replyText, runSara, wroteData } from "./sara";
+import { fallbackCount } from "./llm";
+import { llm, replyText, runSara, wroteData } from "./sara";
 import { fetchMedia, markRead, sendText, type IncomingMessage, type WaCreds } from "./whatsapp";
 
 // ponytail: keep the last 14 patient turns, cut at a user message so no tool call loses its output. Summarize if long chats matter.
-export function trimHistory(items: AgentInputItem[], turns = 14) {
+export function trimHistory(all: AgentInputItem[], turns = 14) {
+  // Histories saved by the old OpenAI Responses model hold reasoning items; Chat Completions providers (Gemini, Groq) reject them.
+  const reasoning = (it: AgentInputItem) => "type" in it && it.type === "reasoning";
+  const items = all.some(reasoning) ? all.filter((it) => !reasoning(it)) : all;
   const starts = items.flatMap((it, i) => ("role" in it && it.role === "user" ? [i] : []));
   // Always start at a user turn: the DB tail cut (HISTORY_MAX) can leave a tool result without its call, which OpenAI rejects.
   return starts.length > turns ? items.slice(starts[starts.length - turns]) : starts[0] ? items.slice(starts[0]) : items;
@@ -26,8 +32,8 @@ export function spokenHistory(items: AgentInputItem[], turns = 10) {
     .join("\n");
 }
 
-// Returns null when the note is too long to transcribe (cost cap).
-async function transcribe(audio: Response | null) {
+// Returns null when the note is too long to transcribe (cost cap). Gemini hears the audio inline (free tier).
+export async function transcribe(audio: Response | null) {
   if (!audio) throw new Error("voice download failed: no media");
   if (!audio.ok || !audio.body) throw new Error(`voice download failed: ${audio.status}`);
   if (Number(audio.headers.get("content-length")) > MAX_VOICE_BYTES) return null;
@@ -44,17 +50,14 @@ async function transcribe(audio: Response | null) {
     }
     chunks.push(value);
   }
-  const blob = new Blob(chunks as BlobPart[]);
-  const form = new FormData();
-  form.append("file", blob, "voice.ogg");
-  form.append("model", "gpt-4o-mini-transcribe");
-  const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
-    body: form,
+  const mimeType = audio.headers.get("content-type")?.split(";")[0].trim() || "audio/ogg";
+  const data = Buffer.concat(chunks).toString("base64");
+  const res = await new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY, httpOptions: { apiVersion: "v1beta" } }).models.generateContent({
+    model: process.env.LLM_TRANSCRIBE_MODEL || "gemini-3.5-flash-lite",
+    contents: [{ role: "user", parts: [{ inlineData: { mimeType, data } }, { text: "Transcribe this voice note word for word. It is English or Arabic. Output only the words." }] }],
+    config: { abortSignal: AbortSignal.timeout(15_000) },
   });
-  if (!res.ok) throw new Error(`transcription failed: ${res.status}`);
-  return ((await res.json()) as { text: string }).text;
+  return res.text?.trim() ?? "";
 }
 
 async function toText(msg: IncomingMessage, wa: WaCreds) {
@@ -113,12 +116,7 @@ export async function appendHistory(patientId: string, items: AgentInputItem[], 
   if (touch) await sb.from("conversations").update({ updated_at: new Date().toISOString() }).eq("patient_id", patientId);
 }
 
-// WhatsApp-safe punctuation: no en/em dashes (they read as machine-written). Hyphens in words stay.
-export const tidy = (text: string) =>
-  splitChips(text).text // a web-only chips marker must never reach WhatsApp
-    .replace(/(\d(?:\s?[ap]m)?)\s*[–—]\s*(?=\d)/gi, "$1 to ")
-    .replace(/\s*[–—]\s*/g, ", ")
-    .replace(/ +- +/g, ", ");
+export { tidy };
 
 const PAUSE_MS = 30 * 60_000;
 // ponytail: a staff pause lapses after 30 min without staff activity, so a missed handoff never leaves a dead chat. Phase 4 inbox refreshes it.
@@ -247,6 +245,7 @@ export async function handleMessage(clinic: Clinic, msg: IncomingMessage) {
       return;
     }
     const t1 = Date.now();
+    const fb = fallbackCount();
     const lapsed = lapseMarker(convo); // staff paused, never handed back, 30 min passed
     const [result] = await Promise.all([
       runSara(clinic, patient, msg.from, [...saved, ...lapsed, user(text)]),
@@ -260,7 +259,7 @@ export async function handleMessage(clinic: Clinic, msg: IncomingMessage) {
     const said = replyText(result.finalOutput, result.history.slice(saved.length));
     const reply = said ? tidy(said) : null;
     await Promise.all([answered(), reply && send(reply)]);
-    console.log(`[timing] prep=${t1 - t0}ms agent=${t2 - t1}ms send=${Date.now() - t2}ms`);
+    console.log(`[timing] prep=${t1 - t0}ms agent=${t2 - t1}ms send=${Date.now() - t2}ms model=${llm().name} fallback=${fallbackCount() > fb}`);
     // Reply is already out: log failures, don't send an error on top.
     await Promise.all([
       logMessages(clinic.id, patient.id, "whatsapp", [{ role: "patient", body: text }, ...(reply ? [{ role: "assistant" as const, body: reply }] : [])]).catch((e) =>

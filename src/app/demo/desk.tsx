@@ -7,6 +7,7 @@ import { CalendarCheckIcon, HeadsetIcon, UserRoundIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { WeekCalendar, type Block } from "@/components/ledger";
+import { freshBlock } from "@/lib/demo";
 import { cn } from "@/lib/utils";
 
 type DeskData = {
@@ -34,6 +35,8 @@ const ago = (iso: string) => {
 export function Desk({ persona, onNews }: { persona: string; onNews?: (paused: boolean) => void }) {
   const [data, setData] = useState<DeskData | null>(null);
   const seen = useRef("");
+  const mine = useRef<string[] | null>(null); // ids of the visitor's own visits at the last poll
+  const [flash, setFlash] = useState<string | null>(null);
   const load = useCallback(async () => {
     const id = readVisitor();
     const r = await fetch(`/api/demo/desk${id ? `?visitorId=${id}` : ""}`).catch(() => null);
@@ -43,6 +46,15 @@ export function Desk({ persona, onNews }: { persona: string; onNews?: (paused: b
     const key = `${d.booked}|${d.paused}|${d.lead?.phone ?? ""}|${d.events[0]?.id ?? ""}`;
     if (seen.current && key !== seen.current) onNews?.(d.paused);
     seen.current = key;
+    const ids = d.blocks.filter((b) => b.mine).map((b) => b.id);
+    const fresh = freshBlock(mine.current, ids);
+    mine.current = ids;
+    if (fresh) {
+      setFlash(fresh);
+      // Calendar is 9 to 21: a 13:00 booking sits below the fold, so scroll it into view once it is drawn.
+      setTimeout(() => document.querySelector(`[data-block="${fresh}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" }), 100);
+      setTimeout(() => setFlash((f) => (f === fresh ? null : f)), 4000);
+    }
   }, [onNews]);
   useEffect(() => {
     const first = setTimeout(() => void load(), 0); // first load as a callback, like the polls
@@ -83,6 +95,7 @@ export function Desk({ persona, onNews }: { persona: string; onNews?: (paused: b
         title="Calendar · next 5 days"
         days={(data?.days ?? []).map((d) => ({ label: weekday(d.date), date: Number(d.date.slice(8)), today: d.today }))}
         blocks={blocks}
+        flash={flash}
         from={9}
         to={21}
       />

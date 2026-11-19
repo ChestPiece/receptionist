@@ -46,3 +46,22 @@ export function isOpenAt(at: Date, hours: Hours, offsetMin: number) {
   const day = DAYS[new Date(`${date}T00:00:00Z`).getUTCDay()];
   return (hours[day] ?? []).some(([open, close]) => time >= open && time < close);
 }
+
+// Deterministic day names, so the model never works out a weekday itself (it got Saturday wrong).
+const day = (date: string, o: Intl.DateTimeFormatOptions) => new Date(`${date}T00:00:00Z`).toLocaleDateString("en-GB", { timeZone: "UTC", ...o });
+export const dayLabel = (date: string) => day(date, { weekday: "long", day: "numeric", month: "long" }).replace(",", "");
+export const sayTime = (hhmm: string) => {
+  const h = Number(hhmm.slice(0, 2)), m = hhmm.slice(3, 5);
+  return `${h % 12 || 12}${m === "00" ? "" : `:${m}`} ${h < 12 ? "am" : "pm"}`;
+};
+export const spokenWhen = (date: string, time: string) => `${dayLabel(date)}, ${sayTime(time)}`;
+
+// "Wed 18 Nov = 2026-11-18 (open), ..." for the prompt: the next `days` dates from today, clinic local time.
+export function calendarLine(c: { hours: Hours; utc_offset_minutes: number }, now: Date, days = 14) {
+  const from = Date.parse(`${localDate(now, c.utc_offset_minutes)}T00:00:00Z`);
+  return Array.from({ length: days }, (_, i) => {
+    const date = new Date(from + i * 86_400_000).toISOString().slice(0, 10);
+    const open = !!c.hours[DAYS[new Date(from + i * 86_400_000).getUTCDay()]]?.length;
+    return `${day(date, { weekday: "short", day: "numeric", month: "short" }).replace(",", "")} = ${date} (${open ? "open" : "closed"})`;
+  }).join(", ");
+}

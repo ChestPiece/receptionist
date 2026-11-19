@@ -91,3 +91,6 @@ export async function topUpDemo(sb: Sb, clinic: Clinic, now = new Date()) {
   if (error) throw error;
   return rows.length;
 }
+
+// The own booking that appeared since the last poll, to scroll to and highlight (null on the first poll or when none is new).
+export const freshBlock = (seen: string[] | null, ids: string[]) => (seen ? ids.find((id) => !seen.includes(id)) ?? null : null);

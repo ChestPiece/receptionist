@@ -5,8 +5,9 @@ import { personaName, type Clinic } from "./clinics";
 import { allow, db } from "./db";
 import { bookingSource, bookVisit, cancelVisit, firstDays, isAway, moveVisit, record, search, HORIZON_DAYS, tooFar, type BookResult } from "./booking";
 import { logEvent, visitSummary } from "./events";
-import { DAYS, localDate, localTime, spreadSlots } from "./slots";
-import { normUaePhone } from "./phone";
+import { calendarLine, DAYS, dayLabel, localDate, localTime, sayTime, spreadSlots } from "./slots";
+import { asciiDigits, normUaePhone } from "./phone";
+import { chatModel } from "./llm";
 import { sendText } from "./whatsapp";
 
 const MAX_UPCOMING = 3; // upcoming visits per patient
@@ -58,13 +59,16 @@ const why = (r: Exclude<BookResult, { ok: true }>, c: Clinic, date: string) =>
   : r.reason === "no_dentist" ? "No dentist does this service. Offer handoff_to_staff."
   : `Not available. Free times on ${date}: ${r.free?.join(", ") || "none"}`;
 
+// `label` and `say` are worked out in code: the model reads them out instead of computing weekdays or 12h times.
+const slotDay = (date: string, times: string[]) => ({ date, label: dayLabel(date), times, say: times.map(sayTime) });
+
 const findSlots = tool({
   name: "find_slots",
   description: "A few free start times spread across each date for a service. Pass every day the patient mentioned.",
   parameters: z.object({
     service: z.string().nullable().describe("Exact service name from clinic info. Null when the patient asks what is free before naming a service: returns the first free days for every service"),
     dates: z.array(DATE).max(3).describe("Every day the patient mentioned; empty when earliest is true"),
-    earliest: z.boolean().nullable().describe("True when the patient wants the soonest time, no day given: ignores dates and returns the first days with times in the next 3 weeks"),
+    earliest: z.boolean().nullable().describe("True when the patient wants the soonest time, no day given: ignores dates and returns the first days with free times in the next 60 days"),
     dentist: z.string().nullable().describe("Dentist name, only if the patient asked for one"),
   }),
   async execute({ service: name, dates, earliest, dentist: dName }, rc: Rc) {
@@ -73,7 +77,7 @@ const findSlots = tool({
       const from = localDate(new Date(), c.utc_offset_minutes);
       const services = await Promise.all(active(c).map(async (s) => {
         const { free } = await search(db(), c, { serviceId: s.id, from, days: 21 });
-        return { service: s.name, days: firstDays(free, 2).map(([date, f]) => ({ date, times: spreadSlots(f.map((x) => x.time), 2) })) };
+        return { service: s.name, days: firstDays(free, 2).map(([date, f]) => slotDay(date, spreadSlots(f.map((x) => x.time), 2))) };
       }));
       return { services };
     }
@@ -86,23 +90,25 @@ const findSlots = tool({
     const head = { service: service.name, ...(dentist && multi(c) ? { dentist: dentist.name } : {}) };
     const q = { serviceId: service.id, dentistId: dentist?.id };
     if (earliest) {
-      const { free } = await search(db(), c, { ...q, from: localDate(new Date(), c.utc_offset_minutes), days: 21 });
-      const days = firstDays(free).map(([date, f]) => ({ date, times: spreadSlots(f.map((x) => x.time), 2) }));
-      return { ...head, days, ...(days.length ? {} : { note: "no free times in the next 3 weeks; offer handoff_to_staff" }) };
+      // One range query over the whole booking horizon: a clinic booked solid for a month still gets an answer.
+      const { free } = await search(db(), c, { ...q, from: localDate(new Date(), c.utc_offset_minutes), days: HORIZON_DAYS });
+      const days = firstDays(free).map(([date, f]) => slotDay(date, spreadSlots(f.map((x) => x.time), 2)));
+      return { ...head, days, ...(days.length ? {} : { note: `no free times in the next ${HORIZON_DAYS} days; offer handoff_to_staff` }) };
     }
     if (!dates.length) return "Pass the day(s) the patient mentioned, or earliest true.";
-    const lines = await Promise.all(
-      dates.map(async (date) => {
-        if (tooFar(date, localDate(new Date(), c.utc_offset_minutes))) return { date, times: [], note: `too far ahead, bookings open up to ${HORIZON_DAYS} days ahead` };
-        const { free: byDate, off } = await search(db(), c, { ...q, from: date, days: 1 });
-        const free = (byDate[date] ?? []).map((f) => f.time);
-        const away = dentist && isAway(off, dentist.id, date, c.utc_offset_minutes) ? { note: `${dentist.name} is away` } : null;
-        if (away) return { date, times: spreadSlots(free, 2), ...away };
-        const times = spreadSlots(free, dates.length > 1 ? 2 : 4);
-        const more = free.length - times.length;
-        return { date, times, ...(more ? { note: `${more} more free times; ask if none of these fit` } : {}) };
-      }),
-    );
+    const today = localDate(new Date(), c.utc_offset_minutes);
+    const ok = dates.filter((d) => !tooFar(d, today)).sort();
+    // One range search covering every asked day (fewer DB round trips, lower voice latency).
+    const span = ok.length ? Math.round((Date.parse(ok[ok.length - 1]) - Date.parse(ok[0])) / 86_400_000) + 1 : 0;
+    const { free: byDate, off } = span ? await search(db(), c, { ...q, from: ok[0], days: span }) : { free: {}, off: [] };
+    const lines = dates.map((date) => {
+      if (!ok.includes(date)) return { ...slotDay(date, []), note: `too far ahead, bookings open up to ${HORIZON_DAYS} days ahead` };
+      const free = (byDate[date] ?? []).map((f) => f.time);
+      if (dentist && isAway(off, dentist.id, date, c.utc_offset_minutes)) return { ...slotDay(date, spreadSlots(free, 2)), note: `${dentist.name} is away` };
+      const times = spreadSlots(free, dates.length > 1 ? 2 : 4);
+      const more = free.length - times.length;
+      return { ...slotDay(date, times), ...(more ? { note: `${more} more free times; ask if none of these fit` } : {}) };
+    });
     // Structured so the web chat can draw tappable time buttons. The model reads JSON fine.
     return { ...head, days: lines };
   },
@@ -115,7 +121,10 @@ export function cleanName(raw: string) {
 }
 
 // Digits only: a UAE mobile as 9715XXXXXXXX, any other number as typed digits (a foreign number is still a lead).
-export const cleanPhone = (raw: string) => normUaePhone(raw) ?? (raw.replace(/\D/g, "").length >= 7 ? raw.replace(/\D/g, "").slice(0, 15) : null);
+export const cleanPhone = (raw: string) => {
+  const d = asciiDigits(raw).replace(/\D/g, "");
+  return normUaePhone(raw) ?? (d.length >= 7 ? d.slice(0, 15) : null);
+};
 
 // Save the visitor's name/number on their patient row the moment they give it. Fills only empty fields:
 // a later booking "for my son" must not rename the account holder. Updates ctx so later tools and the prompt see it.
@@ -217,12 +226,22 @@ const book = tool({
 
 export const READ_BACK = "Not booked yet. Read back the name, the mobile number in small groups of digits, the service, day and time, ask the caller to confirm, and call book again with read_back_confirmed true only after they say yes.";
 
+const NOT_UAE = "Not booked. That is not a UAE mobile number (05X XXX XXXX). Ask the caller to say it again or type it in the chat box. If it really is a foreign number, read it back with its country code and call book with foreign_number_confirmed true after they say yes.";
+
 // On a call a misheard number is the costly mistake (a test call booked a number nobody said), so the read-back is a required argument.
 const voiceBook = tool({
   name: "book",
   description: "Book one appointment on a call. Only after the caller picked a time and said yes to your read-back of their name, number and time.",
-  parameters: BOOK.extend({ read_back_confirmed: z.boolean().describe("True only after you read back name, mobile number, service, day and time and the caller said yes") }),
-  execute: ({ read_back_confirmed, ...args }, rc: Rc) => (read_back_confirmed ? bookChecked(rc!.context, args) : READ_BACK),
+  parameters: BOOK.extend({
+    read_back_confirmed: z.boolean().describe("True only after you read back name, mobile number, service, day and time and the caller said yes"),
+    foreign_number_confirmed: z.boolean().describe("True only when the caller said their number is not a UAE mobile and you read it back with its country code"),
+  }),
+  execute: ({ read_back_confirmed, foreign_number_confirmed, ...args }, rc: Rc) => {
+    if (!read_back_confirmed) return READ_BACK;
+    const p = args.patient_phone;
+    if (p && !normUaePhone(p) && !(foreign_number_confirmed && cleanPhone(p))) return NOT_UAE;
+    return bookChecked(rc!.context, args);
+  },
 });
 
 const bookManyTool = tool({
@@ -330,7 +349,7 @@ const handoff = tool({
 
 const saveContact = tool({
   name: "save_contact",
-  description: "Web chat: save the visitor's name and/or mobile number as soon as their latest message contains one. Never call it with nothing to save. Pass only the person's name (no 'it's' or 'my name is').",
+  description: "Web chat or call: save the visitor's name and/or mobile number as soon as their latest message contains one. Never call it with nothing to save. Pass only the person's name (no 'it's' or 'my name is').",
   parameters: z.object({
     patient_name: z.string().nullable().describe("The person's full name only, e.g. 'Chest Piece', not 'its chest piece'"),
     patient_phone: z.string().nullable().describe("Mobile number as typed"),
@@ -345,20 +364,20 @@ const saveContact = tool({
   },
 });
 
-// Voice calls: everything Sara writes is spoken, and the caller sees nothing.
-const VOICE_TALK = `- Like a warm, calm, professional clinic receptionist on the phone. First person ("I can book that for you").
-- Short spoken sentences: one or two per turn, then one question. No markdown, lists, links, emoji or symbols; everything you write is read aloud.
-- The caller sees nothing. Never say "type", "send", "message here", "in this chat", "tap" or "buttons".
-- Remember everything the caller said earlier in this call (name, number, service, day, time). Never ask for it again; ask only for what is still missing.
-- Greetings and small talk ("how are you"): answer warmly in a few words, then offer help, e.g. "I'm well, thank you! How can I help you today?"
-- Before find_slots, book, reschedule or cancel, say one short line first, worded differently each time ("Let me check that for you.", "One sec, looking now."). No such line for answers you already know. Never say "let me think".
-- After a tool result: give the result first, then the one next step.
-- Vary your wording so you do not sound scripted. Never say the same sentence twice in a call.
-- If the caller interrupts you: stop, answer what they just said. If the point you were making still matters, finish it in one short line. Never restart a list from the top.
-- Short acknowledgements mid-call ("hm", "okay", "sure", "thanks"): answer in a few words or carry on with the pending step. Never repeat a confirmation you already gave.
-- If you did not catch something, kindly ask once to repeat it. Never guess a name, number or time you did not clearly hear.
+// Voice calls: everything Sara writes is spoken. Persona first, then turn-taking, as Google's Live API guide orders it.
+const VOICE_TALK = `- Like a warm, calm, efficient clinic receptionist on the phone. First person ("I can book that for you"). English with a clear neutral accent; when the caller speaks Arabic, reply in clear, friendly Modern Standard Arabic that Gulf callers follow easily.
+- Greet once at the start of the call. Never greet again, even after a pause.
+- Listen more than you talk. One short sentence per turn, then at most one question. No filler ("great question", "absolutely", "I understand"). No markdown, lists, links, emoji or symbols; everything you write is read aloud.
+- Never repeat yourself: do not restate what the caller just said (except the one read-back before booking), do not ask again for anything already answered in this call or on file, never say the same sentence twice.
+- The caller hears you and sees the chat box under the call. Never mention buttons or tapping. Only for a name or number that is hard to hear, say they can also type it in the chat box.
+- Only before find_slots, say up to four words ("Checking Saturday."), then give the result. No line before other tools. Never say "let me think".
+- Speak only times, prices and booking results you got from a tool or the clinic info. If a tool says something failed, say sorry in one line and offer another time or the front desk.
+- If you hear background talk that is not meant for you, ignore it.
+- If the caller interrupts you or adds more while you work: stop, take in everything they said, then answer it all in one short reply. If your earlier point still matters, fold it into that reply. Never restart a list from the top.
+- Small talk ("how are you") or short acknowledgements ("hm", "okay", "thanks"): a few words, then carry on with the pending step. Never repeat a confirmation you already gave.
+- If you did not catch something, ask once for only the part you missed. Never guess a name, number or time you did not clearly hear.
 - Say times the way people speak ("nine am", "half past four"), prices in dirhams.
-- When the caller is done: one line recapping the visit, ask if there is anything else, then a warm goodbye. Do not recap again after that.`;
+- When the caller is done: ask if there is anything else, then a short warm goodbye, then call end_call. Recap the visit only if you have not confirmed it yet in this call.`;
 
 // Static rules first, per-minute and per-patient lines last, so OpenAI prompt caching can reuse the long prefix.
 export function buildInstructions(c: Clinic, patientName: string | null, channel: Channel, now: Date, patientPhone: string | null = null) {
@@ -382,7 +401,7 @@ ${voice ? "" : `- Match the patient's length. Usually 1 to 3 short lines. One qu
 - Use everything the patient already told you (service, day, time, name). Never ask for it again.
 ${voice ? "" : `- Plain text. ${web ? "**bold**" : "*bold*"} only for the date and time. No headings, tables or bullet lists except time options.
 - Never use dashes (– or —) as punctuation. Write "9 am to 1 pm", and use commas or full stops.
-`}- Say dates and times like a person: ${voice ? `"tomorrow at 4 pm", "Saturday the 8th". Work out the weekday and date from the tool's YYYY-MM-DD date and today's date below.` : `"tomorrow at 4 pm", "Thu 22 Oct, 11:45 am".`} Tools use YYYY-MM-DD and 24h HH:MM.
+`}- Say dates and times like a person: ${voice ? `"tomorrow at 4 pm", "Saturday the 8th". Read days and times from the tool's label and say fields.` : `"tomorrow at 4 pm", "Thu 22 Oct, 11:45 am".`} Tools use YYYY-MM-DD and 24h HH:MM.
 - ${voice ? "" : "At most one emoji, only in a greeting or thank-you. "}Never say "successfully", "processed", "as an AI" or "valued patient".
 - If asked whether you are a bot or a person: say honestly you are ${personaName(c)}, the clinic's virtual assistant, and a team member can join if they prefer.${web ? `
 - Quick replies: end every reply with one last line [[chips: a | b | c]]. It is a hidden marker the chat turns into tap buttons, so never mention it. 0 to 4 chips, up to 3 words each, in the patient's language, each worded as the patient would say it next. Pick them for the question you just asked:
@@ -395,8 +414,8 @@ ${voice ? "" : `- Plain text. ${web ? "**bold**" : "*bold*"} only for the date a
 Booking
 - Know the service and the day(s), then call find_slots once with every day the patient mentioned. No day given yet: ask which day suits them. If they just want the soonest time ("earliest", "any day"), call find_slots with earliest true.
 - If they ask what is free before naming a service, call find_slots with service null, show the first free days per service in a short plain list (the buttons only cover one service), then ask which service.
-- ${voice ? 'Say at most three free times in words, spread over the day, then "Which suits you?". If the caller wants morning, afternoon or evening, offer only those.' : web ? 'The chat shows the times from find_slots as tappable buttons, so do not list them again. Say one short line like "Here are the free times, which works for you?".' : 'Offer the times as a short numbered list, then "Which works for you?".'} The patient may answer with a number, a time ("the 4 pm one") or a new preference; understand any of these.
-${voice ? `- Once the caller wants a time, ask only for what is still missing: first the full name, then the mobile number, one at a time. Skip anything on file or already said in this call. Then read back the name, the mobile number in small groups of digits, the service, day and time in one or two sentences, and ask "Is that right?". Call book only after a yes, with patient_name, patient_phone and read_back_confirmed true. Use only a name and number the caller actually said; if unsure, ask again.` : `- If the name is not on file, ask for it before booking.${web ? " On the web, as soon as the patient shows booking intent, ask for their name and mobile number together in one message (skip what you already have). The moment they send a name or number, call save_contact with it (the name alone, without filler like it's or my name is), then carry on. Once they picked a time from the buttons, never call find_slots again: get the missing details, then confirm." : ""} Then confirm everything in one line, e.g. "Filling, *Thu 22 Oct at 4 pm*, under Anas Altaf. Shall I book it?" Call book only after a yes.`}
+- ${voice ? 'Say at most three free times, spread over the day, using the label and say words from find_slots, then "Which suits you?". If the caller wants morning, afternoon or evening, offer only those.' : web ? 'The chat shows the times from find_slots as tappable buttons, so do not list them again. Say one short line like "Here are the free times, which works for you?".' : 'Offer the times as a short numbered list, then "Which works for you?".'} The patient may answer with a number, a time ("the 4 pm one") or a new preference; understand any of these.
+${voice ? `- Once the caller wants a time, ask only for what is still missing: first the full name, then the mobile number, one at a time. Skip anything on file or already said in this call. Then read back the name, the mobile number in small groups of digits, the service, day and time in one or two sentences, and ask "Is that right?". Call book only after a yes, with patient_name, patient_phone and read_back_confirmed true. Use only a name and number the caller actually said; if unsure, ask again. Call save_contact with the name as soon as the caller says it, and with the mobile number as soon as the caller has confirmed it.` : `- If the name is not on file, ask for it before booking.${web ? " On the web, as soon as the patient shows booking intent, ask for their name and mobile number together in one message (skip what you already have). The moment they send a name or number, call save_contact with it (the name alone, without filler like it's or my name is), then carry on. Once they picked a time from the buttons, never call find_slots again: get the missing details, then confirm." : ""} Then confirm everything in one line, e.g. "Filling, *Thu 22 Oct at 4 pm*, under Anas Altaf. Shall I book it?" Call book only after a yes.`}
 ${voice ? "- Several visits on a call (a family, or a check-up plus a filling): book them one at a time, each with its own read-back. Put a child's or relative's name in visit_for." : "- Several visits (a family, or a check-up plus a filling): collect and confirm them all, then after one yes call book_many with every visit (or book once per visit). Put a child's or relative's name in visit_for. Book ALL agreed visits in the same turn and never end your turn while an agreed visit is still unbooked. Only after the last result, write ONE combined confirmation (each date, time, who it is for, the address). If one failed, say which and offer other times in that same message."}
 - After booking: ${voice ? "confirm once with the day, time, dentist and address, and that they can call or message the clinic to change it." : "a short confirmation with the date, time and address, and that they can message here to change it."}
 ${anon ? "- my_appointments shows only visits booked in this chat or call. Visits booked elsewhere (by phone, WhatsApp or at the desk) do not show. If the visitor asks about one, say the front desk will help and call handoff_to_staff; never link a visit by a phone number the visitor types.\n" : ""}- Reschedule or cancel: call my_appointments first. Before cancelling, confirm and offer once to move it instead. After cancelling, keep it short and kind.
@@ -428,18 +447,27 @@ Clinic info
 ${JSON.stringify(info)}
 
 Today is ${weekday} ${today}, local time ${localTime(now, c.utc_offset_minutes)}.
+Next 14 days: ${calendarLine(c, now)}.
+Use the day labels from the tools and this calendar to turn "Saturday" or "next Tuesday" into a date; never work out a weekday yourself.
 Patient: ${patientName ? `${patientName} (name on file, do not ask again)` : "name not on file yet"}${anon ? (patientPhone ? `, mobile ${patientPhone} on file (do not ask again)` : ", mobile not on file yet") : ""}.`;
 }
 
-const receptionist = new Agent<Ctx>({
-  name: "Receptionist",
-  instructions: ({ context }) => buildInstructions(context.clinic, context.patientName, context.channel, new Date(), context.patientPhone),
-  tools: [findSlots, saveContact, book, bookManyTool, myAppointments, cancel, reschedule, confirmVisit, handoff],
-}); // Model: SDK default; override with OPENAI_DEFAULT_MODEL.
+// Built on first use, so importing this file (tests, scripts) needs no LLM key. Model and fallback come from env (llm.ts).
+let agent: Agent<Ctx> | undefined;
+export const llm = () => (llmModel ??= chatModel());
+let llmModel: ReturnType<typeof chatModel> | undefined;
+const receptionist = () =>
+  (agent ??= new Agent<Ctx>({
+    name: "Receptionist",
+    model: llm().model,
+    modelSettings: llm().settings,
+    instructions: ({ context }) => buildInstructions(context.clinic, context.patientName, context.channel, new Date(), context.patientPhone),
+    tools: [findSlots, saveContact, book, bookManyTool, myAppointments, cancel, reschedule, confirmVisit, handoff],
+  }));
 
-// Voice calls: the realtime model calls these tools; the server runs them (runTool). No save_contact (book fills the contact)
-// and no book_many (one visit at a time is easier to read back on a call).
-export const voiceTools = [findSlots, voiceBook, myAppointments, cancel, reschedule, confirmVisit, handoff] as unknown as FunctionTool<Ctx>[];
+// Voice calls: the realtime model calls these tools; the server runs them (runTool). save_contact fills the lead card during the call;
+// no book_many (one visit at a time is easier to read back on a call).
+export const voiceTools = [findSlots, saveContact, voiceBook, myAppointments, cancel, reschedule, confirmVisit, handoff] as unknown as FunctionTool<Ctx>[];
 
 // Tool definitions for the realtime session config.
 export const toolSchemas = () => voiceTools.map((t) => ({ type: "function" as const, name: t.name, description: t.description, parameters: t.parameters }));
@@ -462,7 +490,7 @@ export const wroteData = (items: RunItem[]) =>
 const ctx = (clinic: Clinic, p: Patient, waId: string | null, channel: Channel = waId ? "whatsapp" : "web"): Ctx => ({ clinic, channel, patientId: p.id, patientName: p.name, patientPhone: p.phone ?? null, waId });
 
 export const runSara = (clinic: Clinic, patient: Patient, waId: string | null, input: AgentInputItem[]) =>
-  run(receptionist, input, { context: ctx(clinic, patient, waId) });
+  run(receptionist(), input, { context: ctx(clinic, patient, waId) });
 
 // The words the patient saw from this run. Newer models write them as "commentary" messages and can end with an empty
 // final answer, so fall back to the last assistant text after the patient's message (never an older turn).
@@ -480,4 +508,4 @@ export function replyText(finalOutput: string | undefined, items: AgentInputItem
 
 // Web chat: same agent, streamed.
 export const streamSara = (clinic: Clinic, patient: Patient, input: AgentInputItem[]) =>
-  run(receptionist, input, { context: ctx(clinic, patient, null), stream: true });
+  run(receptionist(), input, { context: ctx(clinic, patient, null), stream: true });

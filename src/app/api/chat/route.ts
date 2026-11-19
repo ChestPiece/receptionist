@@ -10,7 +10,8 @@ import { clinicBySlug } from "@/lib/clinics";
 import { allow, db, logMessages, logUsage } from "@/lib/db";
 import { reviewAndLog } from "@/lib/reviewer";
 import { emergencyReply, isEmergency, unforge } from "@/lib/safety";
-import { replyText, streamSara } from "@/lib/sara";
+import { fallbackCount } from "@/lib/llm";
+import { llm, replyText, streamSara } from "@/lib/sara";
 import { ipOf, overRateLimit, sameOrigin, upsertVisitor } from "@/lib/visitor";
 
 export const maxDuration = 60;
@@ -89,10 +90,13 @@ export async function POST(req: Request) {
     // Staff paused the chat, never handed back, and 30 min passed: tell Sara they are gone (same as handleMessage).
     const lapsed = lapseMarker(convo);
     if (convo?.bot_paused) await sb.from("conversations").update({ bot_paused: false }).eq("patient_id", patient.id);
+    const t0 = Date.now();
+    const fb = fallbackCount();
     const result = await streamSara(clinic, patient, [...saved, ...lapsed, user(text)]);
     after(async () => {
       try {
         await result.completed;
+        console.log(`[timing] web agent=${Date.now() - t0}ms model=${llm().name} fallback=${fallbackCount() > fb}`);
         await logUsage(clinic.id, "web", result.state.usage);
         const items = result.history.slice(saved.length);
         const reply = replyText(result.finalOutput, items);

@@ -19,6 +19,7 @@ import { Sidebar, SidebarInset, SidebarProvider, SidebarRail, SidebarTrigger } f
 import { ThemeToggle } from "@/components/ledger";
 import { fallbackChips, hasMarker, icsFor, splitChips, toolChips, type Chip } from "@/lib/chips";
 import { cn } from "@/lib/utils";
+import { joinTurn } from "@/lib/turns";
 import { CallBar, useCall } from "./call";
 import type { Service } from "@/lib/clinics";
 import { DAYS, type Hours } from "@/lib/slots";
@@ -341,7 +342,19 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, embedded
     const t = setInterval(() => document.visibilityState === "visible" && void check(), 4000);
     return () => clearInterval(t);
   }, [paused, check]);
-  const send = (text: string) => !busy && text.trim() && sendMessage({ text });
+  // Sent while Sara is still replying: held, then sent as one message once she is done, so she answers all of it together.
+  const [queued, setQueued] = useState<string[]>([]);
+  const send = (text: string) => {
+    const t = text.trim();
+    if (!t) return;
+    if (busy) setQueued((q) => [...q, t]);
+    else void sendMessage({ text: t });
+  };
+  useEffect(() => {
+    if (status !== "ready" || !queued.length) return;
+    void sendMessage({ text: queued.join("\n") });
+    setQueued([]); // eslint-disable-line react-hooks/set-state-in-effect -- one extra render when a reply ends; status comes from useChat, no event to hook
+  }, [status, queued, sendMessage]);
 
   // Voice call: each finished spoken turn lands in the thread as a bubble (ids start with "c", never "staff-").
   const turnNo = useRef(0);
@@ -351,7 +364,15 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, embedded
     test,
     persona,
     clinicName: name,
-    onTurn: (role, text) => setMessages((ms) => [...ms, { id: `c${Date.now()}-${turnNo.current++}`, role, parts: [{ type: "text", text }] }]),
+    // Fragments of one spoken turn (cut by a pause or a tool call) merge into the last call bubble.
+    onTurn: (role, text) =>
+      setMessages((ms) => {
+        const lm = ms.at(-1);
+        const lp = lm?.parts[0];
+        const joined = lm?.id.startsWith("c") && lp?.type === "text" ? joinTurn({ role: lm.role, text: lp.text }, role, text) : null;
+        if (lm && joined) return [...ms.slice(0, -1), { ...lm, parts: [{ type: "text", text: joined }] }];
+        return [...ms, { id: `c${Date.now()}-${turnNo.current++}`, role, parts: [{ type: "text", text }] }];
+      }),
   });
   const onCall = call.state === "connecting" || call.state === "live";
 
@@ -362,6 +383,8 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, embedded
   }, [reduce]);
 
   const empty = messages.length === 0;
+  // A call that opens the thread speaks its own greeting: skip the typed one so only one shows.
+  const spokenOpen = empty ? onCall : messages[0].id.startsWith("c");
   const [typedAt, setTypedAt] = useState(-1); // message count when the visitor started typing: chips hide until the next message
   const lastMsg = messages.at(-1);
   const lastUserText = messages.findLast((m) => m.role === "user")?.parts.map((p) => (p.type === "text" ? p.text : "")).join("") ?? "";
@@ -411,7 +434,7 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, embedded
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {!paused && !onCall && (
-              <Button size="sm" variant="outline" className="border-primary/40 text-primary hover:text-primary" aria-label={`Call ${persona}`} onClick={() => void call.start()} disabled={busy}>
+              <Button size="sm" variant="outline" className="border-primary/40 text-primary hover:text-primary" aria-label={`Call ${persona}`} onClick={() => void call.start(new AudioContext())} disabled={busy}>
                 <PhoneCallIcon className="size-4" /> <span className="hidden sm:inline">Call {persona}</span>
               </Button>
             )}
@@ -433,7 +456,7 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, embedded
               </h1>
             )}
             <AnimatePresence mode="wait" initial={false}>
-              {greeted || !empty ? (
+              {spokenOpen ? null : greeted || !empty ? (
                 <Enter key="greeting">
                   <div className="flex flex-col gap-5">
                     <Message from="assistant">
@@ -521,15 +544,19 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, embedded
               {call.error}
             </p>
           )}
-          {onCall ? (
-            <CallBar call={call} persona={persona} />
-          ) : (
+          {queued.length > 0 && (
+            <p role="status" className="truncate text-xs text-muted-foreground">
+              Sends when {persona} finishes: {queued.join(" / ")}
+            </p>
+          )}
+          {onCall && <CallBar call={call} persona={persona} />}
+          {/* Stays open during a call: a typed name or number goes into the call, and Sara answers by voice. */}
           <PromptInput
-            onSubmit={({ text }) => void send(text)}
+            onSubmit={({ text }) => void (call.state === "live" ? text.trim() && call.say(text.trim()) : send(text))}
             className="[&_[data-slot=input-group]]:h-auto [&_[data-slot=input-group]]:items-end [&_[data-slot=input-group]]:rounded-2xl [&_[data-slot=input-group]]:bg-card [&_[data-slot=input-group]]:shadow-sm"
           >
             <PromptInputBody>
-              <PromptInputTextarea dir="auto" onChange={() => setTypedAt(messages.length)} placeholder={`Message ${persona}…`} rows={1} className="min-h-0 py-3.5 ps-4" />
+              <PromptInputTextarea dir="auto" onChange={() => setTypedAt(messages.length)} placeholder={onCall ? "Type a name or number here…" : `Message ${persona}…`} rows={1} className="min-h-0 py-3.5 ps-4" />
             </PromptInputBody>
             <InputGroupAddon align="inline-end">
               <PromptInputSubmit status={status} onStop={stop} className="rounded-full">
@@ -537,8 +564,9 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, embedded
               </PromptInputSubmit>
             </InputGroupAddon>
           </PromptInput>
-          )}
-          <p className="text-center text-[11px] text-muted-foreground">{persona} is a virtual assistant. In an emergency, call 998.</p>
+          <p className="text-center text-[11px] text-muted-foreground">
+            {onCall ? "Calls use Google AI. Please don't share medical details." : `${persona} is a virtual assistant. In an emergency, call 998.`}
+          </p>
         </div>
       </SidebarInset>
     </SidebarProvider>
