@@ -81,32 +81,45 @@ let fallbacks = 0;
 /** How many turns the fallback answered on this instance; the [timing] logs compare it before and after a run. */
 export const fallbackCount = () => fallbacks;
 
-/** The primary model, or the fallback when the primary fails before it produced anything. Never mid-stream. */
-export function fallbackModel(primary: Model, fallback: Model | undefined): Model {
+/** The primary model, or the fallback when the primary fails before it produced anything. Never mid-stream.
+ * After a primary failure the fallback goes first for `coolMs`: free Gemini overloaded (2026-11-19: 9 s first bytes, 503s)
+ * made every agent step wait out the 8 s timeout, so a turn with a tool call took 16 s+ before Groq answered.
+ * ponytail: per-instance cool-down; a shared one (DB/KV) would spare other Vercel instances their first slow step. */
+export function fallbackModel(primary: Model, fallback: Model | undefined, coolMs = 60_000): Model {
   if (!fallback) return primary;
+  let downUntil = 0;
+  const order = () => (Date.now() < downUntil ? [fallback, primary] : [primary, fallback]);
+  const failed = (m: Model, e: unknown) => {
+    if (m === primary) downUntil = Date.now() + coolMs;
+    console.warn(`[llm] ${m === primary ? "primary" : "fallback"} failed, trying the other:`, (e as Error).message);
+  };
   return {
     async getResponse(req) {
+      const [a, b] = order();
+      if (a === fallback) fallbacks++;
       try {
-        return await primary.getResponse(req);
+        return await a.getResponse(req);
       } catch (e) {
         if (!retryable(e)) throw e;
-        console.warn("[llm] primary failed, using fallback:", (e as Error).message);
-        fallbacks++;
-        return fallback.getResponse(req);
+        failed(a, e);
+        if (b === fallback) fallbacks++;
+        return b.getResponse(req);
       }
     },
     async *getStreamedResponse(req) {
+      const [a, b] = order();
+      if (a === fallback) fallbacks++;
       let started = false;
       try {
-        for await (const ev of primary.getStreamedResponse(req)) {
+        for await (const ev of a.getStreamedResponse(req)) {
           started = true;
           yield ev;
         }
       } catch (e) {
         if (started || !retryable(e)) throw e;
-        console.warn("[llm] primary failed, using fallback:", (e as Error).message);
-        fallbacks++;
-        yield* fallback.getStreamedResponse(req);
+        failed(a, e);
+        if (b === fallback) fallbacks++;
+        yield* b.getStreamedResponse(req);
       }
     },
   };
@@ -145,8 +158,6 @@ export function reviewLLM(env: Env = process.env): LLMConfig {
   return { ...main, model: env.LLM_REVIEW_MODEL || (main.provider === "gemini" ? "gemini-3.5-flash" : main.model) };
 }
 
-/** The reviewer Agent's model, with the same fallback as chat. */
-export function reviewModel(env: Env = process.env): Model {
-  const fb = env.LLM_FALLBACK_PROVIDER ? resolveLLM(env, "LLM_FALLBACK_") : undefined;
-  return fallbackModel(build(reviewLLM(env), !!fb), fb && build(fb));
-}
+/** The reviewer Agent's model, with no fallback: it runs after the reply, so nobody waits on it, and falling back spent
+ * Groq's small free quota (about 8K tokens a minute) that chat needs when Gemini is down. A failed review logs review_skipped. */
+export const reviewModel = (env: Env = process.env): Model => build(reviewLLM(env));
