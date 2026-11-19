@@ -44,11 +44,14 @@ describe("call helpers", () => {
     expect(scheduling("my_appointments")).toBe("WHEN_IDLE")
     expect(scheduling("book")).toBeUndefined()
   })
-  it("nudges once the caller finished 4 s ago, Sara said nothing since and no tool runs", () => {
-    expect(shouldNudge({ callerDoneAt: 0, lastModelAt: 0, toolsInFlight: 0, now: 4000 })).toBe(true)
-    expect(shouldNudge({ callerDoneAt: 0, lastModelAt: 0, toolsInFlight: 0, now: 3999 })).toBe(false)
-    expect(shouldNudge({ callerDoneAt: 0, lastModelAt: 0, toolsInFlight: 1, now: 9000 })).toBe(false)
-    expect(shouldNudge({ callerDoneAt: 1000, lastModelAt: 2000, toolsInFlight: 0, now: 9000 })).toBe(false)
-    expect(shouldNudge({ callerDoneAt: 0, lastModelAt: 0, toolsInFlight: 0, now: 0 })).toBe(false)
+  it("nudges once the caller's last words are 4 s old, Sara said nothing since and no tool runs", () => {
+    const s = { callerDoneAt: 1000, lastModelAt: 0, toolsInFlight: 0, nudgedFor: -1, resuming: false, now: 5000 }
+    expect(shouldNudge(s)).toBe(true)
+    expect(shouldNudge({ ...s, now: 4999 })).toBe(false)
+    expect(shouldNudge({ ...s, toolsInFlight: 1 })).toBe(false)
+    expect(shouldNudge({ ...s, lastModelAt: 2000 })).toBe(false) // Sara answered
+    expect(shouldNudge({ ...s, nudgedFor: 1000 })).toBe(false) // once per caller turn
+    expect(shouldNudge({ ...s, resuming: true })).toBe(false)
+    expect(shouldNudge({ ...s, callerDoneAt: 0, now: 9000 })).toBe(false) // the caller has not spoken yet
   })
 })

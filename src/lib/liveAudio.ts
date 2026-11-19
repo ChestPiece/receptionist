@@ -5,7 +5,7 @@ export const CHUNK = 640
 export const OUT_RATE = 24_000
 
 /** AudioWorklet source: averages device-rate frames down to 16 kHz and posts Int16Array chunks of CHUNK samples.
- * ponytail: a box filter, not a proper low-pass; fine for speech, swap in a windowed-sinc resampler if STT suffers. */
+ * ponytail: a box filter; call.tsx puts a native 7 kHz low-pass in front against aliasing. Swap in a windowed-sinc resampler if STT still suffers. */
 export const CAPTURE_WORKLET = `
 class Pcm16 extends AudioWorkletProcessor {
   constructor() { super(); this.ratio = sampleRate / 16000; this.pos = 0; this.acc = 0; this.cnt = 0; this.out = new Int16Array(${CHUNK}); this.n = 0 }
@@ -101,6 +101,7 @@ export async function echoSafeOutput(ctx: AudioContext, node: AudioNode, timeout
 export const READ_TOOLS = new Set(["find_slots", "my_appointments"])
 export const scheduling = (name: string): "WHEN_IDLE" | undefined => (READ_TOOLS.has(name) ? "WHEN_IDLE" : undefined)
 
-/** The caller finished talking 4 s ago, Sara has said nothing since and no tool is running: the call looks stuck. */
-export const shouldNudge = (s: { callerDoneAt: number; lastModelAt: number; toolsInFlight: number; now: number }) =>
-  s.now - s.callerDoneAt >= 4000 && s.lastModelAt <= s.callerDoneAt && s.toolsInFlight === 0
+/** The caller's last words are 4 s old, Sara has said nothing since and no tool is running: the call looks stuck.
+ * Judged on time only, never on whether Google closed the caller's turn: a turn that never closes is the stuck case. */
+export const shouldNudge = (s: { callerDoneAt: number; lastModelAt: number; toolsInFlight: number; nudgedFor: number; resuming: boolean; now: number }) =>
+  s.callerDoneAt > 0 && s.nudgedFor !== s.callerDoneAt && !s.resuming && s.now - s.callerDoneAt >= 4000 && s.lastModelAt <= s.callerDoneAt && s.toolsInFlight === 0

@@ -21,13 +21,13 @@ describe("liveTools", () => {
 
 describe("voiceSession", () => {
   beforeEach(() => vi.unstubAllEnvs());
-  it("uses Sulafat, low start sensitivity, resumption and proactive audio, no affective dialog", () => {
+  it("uses Sulafat, a VAD that hears short answers, resumption, no proactivity or affective dialog fields", () => {
     const { model, config } = voiceSession(clinic, patient, [], { quick: "Check-up: Thursday 19 November 9 am" });
     expect(model).toBe("gemini-3.8-live");
     expect(config.speechConfig?.voiceConfig?.prebuiltVoiceConfig?.voiceName).toBe("Sulafat");
-    expect(config.realtimeInputConfig?.automaticActivityDetection).toMatchObject({ silenceDurationMs: 500, prefixPaddingMs: 200 });
+    expect(config.realtimeInputConfig?.automaticActivityDetection).toMatchObject({ startOfSpeechSensitivity: "START_SENSITIVITY_HIGH", silenceDurationMs: 700, prefixPaddingMs: 20 });
     expect(config.sessionResumption).toEqual({});
-    expect(config.proactivity).toEqual({ proactiveAudio: true });
+    expect(config).not.toHaveProperty("proactivity"); // always on in gemini-3.8-live
     expect(config).not.toHaveProperty("enableAffectiveDialog");
     expect(String(config.systemInstruction)).toContain("Check-up: Thursday 19 November 9 am");
   });

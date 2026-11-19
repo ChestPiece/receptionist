@@ -342,7 +342,19 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, embedded
     const t = setInterval(() => document.visibilityState === "visible" && void check(), 4000);
     return () => clearInterval(t);
   }, [paused, check]);
-  const send = (text: string) => !busy && text.trim() && sendMessage({ text });
+  // Sent while Sara is still replying: held, then sent as one message once she is done, so she answers all of it together.
+  const [queued, setQueued] = useState<string[]>([]);
+  const send = (text: string) => {
+    const t = text.trim();
+    if (!t) return;
+    if (busy) setQueued((q) => [...q, t]);
+    else void sendMessage({ text: t });
+  };
+  useEffect(() => {
+    if (status !== "ready" || !queued.length) return;
+    void sendMessage({ text: queued.join("\n") });
+    setQueued([]); // eslint-disable-line react-hooks/set-state-in-effect -- one extra render when a reply ends; status comes from useChat, no event to hook
+  }, [status, queued, sendMessage]);
 
   // Voice call: each finished spoken turn lands in the thread as a bubble (ids start with "c", never "staff-").
   const turnNo = useRef(0);
@@ -530,6 +542,11 @@ function ChatView({ slug, clinicName, persona, phone, logo, test, info, embedded
           {call.error && (
             <p role="alert" className="text-center text-sm text-alert">
               {call.error}
+            </p>
+          )}
+          {queued.length > 0 && (
+            <p role="status" className="truncate text-xs text-muted-foreground">
+              Sends when {persona} finishes: {queued.join(" / ")}
             </p>
           )}
           {onCall && <CallBar call={call} persona={persona} />}

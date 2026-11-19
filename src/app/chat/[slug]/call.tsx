@@ -19,7 +19,7 @@ const HIDDEN_MS = 30_000; // tab in the background this long: hang up
 const BYE_MS = 8_000; // after end_call, hang up even if the goodbye audio never reports finishing
 const LIVE_API_VERSION = "v1alpha"; // ephemeral tokens are v1alpha only (same as voice.ts)
 const TOOL_FAILED = "That did not work. Say sorry, and offer handoff_to_staff so the front desk calls back.";
-const NUDGE = "(The caller is waiting for your answer.)";
+const NUDGE = "(The caller stopped talking a few seconds ago and is waiting. Answer what they said. If part of it was unclear, ask only for that part.)";
 
 export type CallState = "idle" | "connecting" | "live" | "error";
 type Live = {
@@ -296,11 +296,12 @@ export function useCall(o: { slug: string; visitorId: string; test?: boolean; pe
         resetIdle();
         l.max = setTimeout(() => hangup("max"), MAX_MS);
         l.watch = setInterval(() => {
-          if (nudgedFor === callerDoneAt || userText || resuming || !callerDoneAt) return;
-          if (!shouldNudge({ callerDoneAt, lastModelAt, toolsInFlight: inflight, now: performance.now() })) return;
+          if (!shouldNudge({ callerDoneAt, lastModelAt, toolsInFlight: inflight, nudgedFor, resuming, now: performance.now() })) return;
           nudgedFor = callerDoneAt;
           l.m.nudges++;
-          say(NUDGE);
+          finish("user");
+          // Realtime text, not client content: turnComplete content would cut off a reply that is just starting.
+          l.session?.sendRealtimeInput({ text: NUDGE });
         }, 1000);
         const { persona, clinicName } = opts.current;
         say(`(The call just connected.) Greet the caller in one short sentence as ${persona} from ${clinicName}, and ask how you can help.`);
@@ -383,7 +384,9 @@ export function useCall(o: { slug: string; visitorId: string; test?: boolean; pe
         const capture = new AudioWorkletNode(ctx, "pcm16");
         l.capture = capture;
         capture.port.onmessage = (e: MessageEvent<Int16Array>) => l.session?.sendRealtimeInput({ audio: { data: int16ToBase64(e.data), mimeType: "audio/pcm;rate=16000" } });
-        ctx.createMediaStreamSource(mic).connect(capture).connect(ctx.destination); // outputs silence; keeps the node rendering
+        // Low-pass before the worklet's 16 kHz downsample, so high frequencies do not alias into the speech band.
+        const lowpass = new BiquadFilterNode(ctx, { type: "lowpass", frequency: 7000 });
+        ctx.createMediaStreamSource(mic).connect(lowpass).connect(capture).connect(ctx.destination); // outputs silence; keeps the node rendering
       } catch (e) {
         console.warn("[call]", (e as Error).message);
         if (live.current === l) fail("unavailable");

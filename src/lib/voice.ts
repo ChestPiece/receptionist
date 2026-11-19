@@ -60,11 +60,11 @@ export function voiceSession(clinic: Clinic, patient: Patient, history: AgentInp
       // Google resets Live connections about every 10 min and on blips; the handle lets the browser resume the same context.
       sessionResumption: o.handle ? { handle: o.handle } : {},
       contextWindowCompression: { slidingWindow: {} },
-      // Low start sensitivity: a cough or "mm-hmm" does not cut Sara off. High end sensitivity + 500 ms: quick replies.
+      // High start sensitivity + 20 ms prefix: a short "yes" or one digit is heard (low + 200 ms dropped them, so Sara stayed
+      // silent or said she missed it). Self-interrupts are handled by echoSafeOutput, background talk by proactive audio
+      // (always on in gemini-3.8-live, so no proactivity field). 700 ms silence lets a caller pause inside a phone number.
       // ponytail: server VAD only; add client VAD with manual activityStart/End if backchannels still interrupt.
-      realtimeInputConfig: { automaticActivityDetection: { startOfSpeechSensitivity: StartSensitivity.START_SENSITIVITY_LOW, endOfSpeechSensitivity: EndSensitivity.END_SENSITIVITY_HIGH, silenceDurationMs: 500, prefixPaddingMs: 200 } },
-      // Proactive audio lets Sara stay quiet for background talk. Affective dialog is refused on v1alpha tokens (close 1007).
-      proactivity: { proactiveAudio: true },
+      realtimeInputConfig: { automaticActivityDetection: { startOfSpeechSensitivity: StartSensitivity.START_SENSITIVITY_HIGH, endOfSpeechSensitivity: EndSensitivity.END_SENSITIVITY_HIGH, silenceDurationMs: 700, prefixPaddingMs: 20 } },
     },
   };
 }
