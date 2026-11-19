@@ -131,6 +131,35 @@ describe("fallbackModel", () => {
     await expect(fallbackModel(aborted, fake({ text: "b" })).getResponse(req)).rejects.toThrow();
   });
 
+  it("after a primary failure, skips the primary for the cool-down instead of waiting out its timeout every step", async () => {
+    let calls = 0;
+    const p = fake({ fail: 503, text: "a" });
+    const inner = p.getResponse;
+    p.getResponse = (r) => (calls++, inner(r));
+    const m = fallbackModel(p, fake({ text: "b" }));
+    await m.getResponse(req);
+    expect(textOf(await m.getResponse(req))).toContain('"b"');
+    expect(await collect(m)).toEqual(["b"]);
+    expect(calls).toBe(1);
+  });
+
+  it("tries the primary again once the cool-down is over, or when the fallback fails during it", async () => {
+    let up = false;
+    const p = fake({ text: "a" });
+    p.getResponse = async () => {
+      if (!up) throw err(503);
+      return res("a");
+    };
+    const fb = fake({ fail: 429, text: "b" });
+    const m = fallbackModel(p, fb, 60_000);
+    await expect(m.getResponse(req)).rejects.toThrow("HTTP 429"); // both down
+    up = true;
+    expect(textOf(await m.getResponse(req))).toContain('"a"'); // fallback 429 in the cool-down, primary is back
+    const expired = fallbackModel(fake({ fail: 503, text: "a" }), fake({ text: "b" }), 0);
+    await expired.getResponse(req);
+    await expect(expired.getResponse(req)).resolves.toBeTruthy();
+  });
+
   it("is the primary itself when no fallback is configured", () => {
     const p = fake({ text: "a" });
     expect(fallbackModel(p, undefined)).toBe(p);

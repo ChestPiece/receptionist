@@ -56,13 +56,17 @@ export async function POST(req: Request) {
   // An emergency always gets the 998 reply, even past the limits below (a few per visitor, so it can't be used to dodge them).
   const urgent = isEmergency(text) && (await allow(`emerg:${clinic.id}:${visitorId}`, 3, 600));
   // Per IP (rotating visitor ids gets past the per-visitor count), then per visitor, counted atomically before the model runs.
-  if (!urgent && !(await allow(`chat-ip:${ipOf(req)}`, 60, 600))) return fixed(slowDown(clinic.phone));
+  // Independent reads run together: each Supabase round trip is ~350 ms from a laptop, and four in a row delayed every reply.
+  const [ipOk, patient] = await Promise.all([urgent || allow(`chat-ip:${ipOf(req)}`, 60, 600), upsertVisitor(clinic, visitorId, test)]);
+  if (!ipOk) return fixed(slowDown(clinic.phone));
   const sb = db();
-  const patient = await upsertVisitor(clinic, visitorId, test);
-  const [overCount, underHits] = urgent ? [false, true] : await Promise.all([overRateLimit(patient.id), allow(`chat-v:${patient.id}`, RATE_MAX, RATE_WINDOW_MS / 1000)]);
+  const [overCount, underHits, { data: convo }] = await Promise.all([
+    urgent ? false : overRateLimit(patient.id),
+    urgent ? true : allow(`chat-v:${patient.id}`, RATE_MAX, RATE_WINDOW_MS / 1000),
+    sb.from("conversations").select("history, bot_paused, updated_at").eq("patient_id", patient.id).maybeSingle(),
+  ]);
   if (overCount || !underHits) return fixed(slowDown(clinic.phone));
 
-  const { data: convo } = await sb.from("conversations").select("history, bot_paused, updated_at").eq("patient_id", patient.id).maybeSingle();
   const saved = trimHistory((convo?.history ?? []) as AgentInputItem[]);
   const paused = stillPaused(convo);
   // While staff own the chat, updated_at stays put so the 30-min pause can lapse (same as agent.ts).
